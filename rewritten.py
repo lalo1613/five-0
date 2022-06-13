@@ -357,13 +357,12 @@ def get_curr_leader(cpu_hand, opp_hand):
 
 def tieBreakProbas(cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
     res_vec = [0.5] * 9
-    deck_suits = np.array(deck) // 13
     deck_values = np.array(deck) % 13
     deck_n = len(deck)
     n_remaining = sum(cpu_hand == -1)
 
-    cpu_hand_vals = np.array([val % 13 if val > 0 else -1 for val in cpu_hand])
-    opp_hand_vals = np.array([val % 13 if val > 0 else -1 for val in opp_hand])
+    cpu_hand_vals = np.array([val % 13 if val >= 0 else -1 for val in cpu_hand])
+    opp_hand_vals = np.array([val % 13 if val >= 0 else -1 for val in opp_hand])
 
     lead, lead_ind = get_curr_leader(cpu_hand_vals, opp_hand_vals)
     
@@ -391,17 +390,14 @@ def tieBreakProbas(cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
         res_vec[7] = res_vec[1]
 
     # opp has pair, cpu doesn't
-    elif cpu_probas[0] > 0:
+    elif cpu_probas[0] > 0 and cpu_probas[1] > 0:
         res_vec[1] = sum(np.isin(deck_values, cpu_hand_vals[cpu_hand_vals > opp_hand_vals[0]])) \
                      / sum(np.isin(deck_values, cpu_hand_vals))
         res_vec[1] += 0.5 * sum(np.isin(deck_values, cpu_hand_vals[cpu_hand_vals == opp_hand_vals[0]])) \
                       / sum(np.isin(deck_values, cpu_hand_vals))
-        if any(np.isnan(res_vec)):
-            print("stop")
-
 
     # cpu has pair, opp doesn't
-    elif opp_probas[0] > 0:
+    elif opp_probas[0] > 0 and opp_probas[1] > 0:
         res_vec[1] = 1 - sum(np.isin(deck_values, opp_hand_vals[opp_hand_vals > cpu_hand_vals[0]])) \
                      / sum(np.isin(deck_values, opp_hand_vals))
         res_vec[1] -= 0.5 * sum(np.isin(deck_values, opp_hand_vals[opp_hand_vals == cpu_hand_vals[0]])) \
@@ -422,6 +418,8 @@ def tieBreakProbas(cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
     return res_vec
 
 def calcHandWinProba(cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
+    # cpu_probas, opp_probas, cpu_hand, opp_hand, deck = cpu_probas_list[i], opp_probas_list[i], vec, opp_vec, deck_left
+    # cpu_probas, opp_probas, cpu_hand, opp_hand, deck = cpu_decision_probas_list[i], opp_probas_list[i], vec, opp_vec, deck_left
     if sum(cpu_hand == -1) == 0:
         win_count = 0
         for i in range(len(deck)):
@@ -444,8 +442,8 @@ def calcHandWinProba(cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
 def getCPUchoice():
     options = [x for x in range(5) if player[turn][level][x] == -1]
     temp_player = np.array(player)
-    cpu_hands = [temp_player[turn, :, i] for i in range(5)]
-    opp_hands = [temp_player[1 - turn, :, i] for i in range(5)]
+    cpu_hands = [temp_player[turn, :, i].copy() for i in range(5)]
+    opp_hands = [temp_player[1 - turn, :, i].copy() for i in range(5)]
     for i in range(5):
         opp_hands[i][4] = -1
     deck_left = np.concatenate([deck, temp_player[1 - turn][4][temp_player[1 - turn][4] != -1]])
@@ -706,9 +704,15 @@ while run:
 
     # has the board been filled?
     if len(deck) == 2:
+        choice = -1
+        for i in range(5):
+            if player[turn][level][i] == -1:
+                choice = i
+        moveCardTo(turn, level, choice)
+        player[turn][level][choice] = curCard
+        gameOver = True
         curCard = random.sample(deck, 1)[0]
         deck.remove(curCard)
-        gameOver = True
         calculateWinner()
 
     # is this the last card of the row? (if so, it'll be auto-placed)
