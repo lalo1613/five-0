@@ -3,6 +3,7 @@ import pandas as pd
 from poisson_binomial import PoissonBinomial
 from scipy.stats import mode
 from math import log10, ceil
+from time import time
 
 class NonMlPlayer():
     """
@@ -263,7 +264,7 @@ class NonMlPlayer():
                              range(3)])
             tp_odds = sum([(sum([1 for x in deck_values if x == ch_values[i]]) / deck_n) * \
                            (sum([1 for x in deck_values if x in np.delete(ch_values, i)]) / (deck_n - 1)) for i in
-                           range(3)]) / 2
+                           range(3)])
             high_card_odds = 1 - straight_odds - flush_odds - pair_odds - tp_odds - toak_odds
 
             return [high_card_odds, pair_odds, tp_odds, toak_odds, straight_odds, flush_odds, 0, 0, straight_odds * flush_odds]
@@ -278,13 +279,12 @@ class NonMlPlayer():
                               (3 * sum([1 for x in deck_values if x not in ch_values]) *
                                sum(unseen_cards_counts == 3) * 3 * 2) / (deck_n * (deck_n - 1) * (deck_n - 2)) + \
                               (3 * sum([1 for x in deck_values if x not in ch_values]) *
-                               sum(unseen_cards_counts == 4) * 4 * 3) / (
-                                          deck_n * (deck_n - 1) * (deck_n - 2)) - extra_toak_odds
+                               sum(unseen_cards_counts == 4) * 4 * 3) / \
+                              (deck_n * (deck_n - 1) * (deck_n - 2)) - extra_toak_odds
 
             extra_two_unrelated_odds = sum([i * sum(unseen_cards_counts == i) *
                                             (sum([1 for x in deck_values if x not in ch_values]) - i) for i in
-                                            range(1, 5)]) / \
-                                       ((deck_n - 1) * (deck_n - 2))
+                                            range(1, 5)]) / ((deck_n - 1) * (deck_n - 2))
 
             if ch_mode_count == 2:
                 tp_odds = extra_pair_odds
@@ -295,8 +295,7 @@ class NonMlPlayer():
                             (max(sum([1 for x in deck_values if x == ch_mode_val]) - 1, 0) / (deck_n - 1)) * \
                             (sum([1 for x in deck_values if x != ch_mode_val]) / (deck_n - 2))
 
-                fh_odds = 3 * (
-                            sum([1 for x in deck_values if x == ch_mode_val]) / deck_n) * extra_pair_odds + extra_toak_odds
+                fh_odds = 3 * (sum([1 for x in deck_values if x == ch_mode_val]) / deck_n) * extra_pair_odds + extra_toak_odds
 
                 return [0, 1 - tp_odds - toak_odds - fh_odds - foak_odds, tp_odds, toak_odds, 0, 0, fh_odds, foak_odds, 0]
 
@@ -326,10 +325,9 @@ class NonMlPlayer():
                 needed_func = [min, min, min, max, max, max]
                 straight_odds = 0
                 for s in range(4):
-                    straight_odds += np.prod([sum([1 for x in deck_values if x == needed_func[i](ch_values) + i]) for i in
-                                              poss_vals[s:(s + 3)]]) / \
-                                     (deck_n * (deck_n - 1) * (deck_n - 2))
-                straight_odds = 3 * 2 * straight_odds
+                    a = np.prod([sum([1 for x in deck_values if x == needed_func[s + i](ch_values) + poss_vals[s + i]])
+                                              for i in range(3)]) * 3 * 2 / (deck_n * (deck_n - 1) * (deck_n - 2))
+                    straight_odds += a
             else:
                 straight_odds = 0
             if 12 in ch_values:
@@ -361,8 +359,7 @@ class NonMlPlayer():
                     for s in range(4):
                         straight_odds += np.prod(
                             [sum([1 for x in deck_values if x == needed_func[i](ch_values) + i]) for i in
-                             poss_vals[s:(s + 3)]]) / \
-                                         (deck_n * (deck_n - 1) * (deck_n - 2))
+                             poss_vals[s:(s + 3)]]) / (deck_n * (deck_n - 1) * (deck_n - 2))
                     straight_odds = 3 * 2 * straight_odds
                     ch_values[ch_values == -1] = 12
 
@@ -375,19 +372,18 @@ class NonMlPlayer():
                 flush_odds = 0
 
             # pair odds
-            pair_odds = 3 * (sum(
-                [1 for x in deck_values if x in ch_values]) / deck_n) * extra_two_unrelated_odds + extra_pair_odds
+            pair_odds = 3 * (sum([1 for x in deck_values if x in ch_values]) / deck_n) * \
+                        extra_two_unrelated_odds + extra_pair_odds
 
-            tp_odds = 3 * 0.5 * sum([(sum([1 for x in deck_values if x == ch_values[i]]) / deck_n) * \
+            tp_odds = 3 * sum([(sum([1 for x in deck_values if x == ch_values[i]]) / deck_n) * \
                                      (sum([1 for x in deck_values if x in np.delete(ch_values, i)]) / (deck_n - 1)) for i in
                                      range(2)]) * \
                       (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 2)) + \
-                      3 * (sum([1 for x in deck_values if x in ch_values]) / deck_n) * extra_pair_odds
+                      3 * (sum([1 for x in deck_values if x in ch_values]) / sum([1 for x in deck_values if x not in ch_values])) * extra_pair_odds
 
             toak_odds = 3 * sum([(sum([1 for x in deck_values if x == ch_values[i]]) / deck_n) * \
-                                 (max(sum([1 for x in deck_values if x == ch_values[i]]) - 1, 0) / (deck_n - 1)) for i in
-                                 range(2)]) * \
-                        (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 2)) + extra_toak_odds
+                                 (max(sum([1 for x in deck_values if x == ch_values[i]]) - 1, 0) / (deck_n - 1))
+                                 for i in range(2)]) * (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 2)) + extra_toak_odds
 
             fh_odds = 3 * sum([(sum([1 for x in deck_values if x == ch_values[i]]) / deck_n) * \
                                (max(sum([1 for x in deck_values if x == ch_values[i]]) - 1, 0) / (deck_n - 1)) * \
@@ -401,6 +397,495 @@ class NonMlPlayer():
             high_card_odds = 1 - straight_odds - flush_odds - pair_odds - tp_odds - toak_odds - fh_odds - foak_odds
 
             return [high_card_odds, pair_odds, tp_odds, toak_odds, straight_odds, flush_odds, fh_odds, foak_odds, straight_odds * flush_odds]
+
+    def calc_extended_random_hand_probas(self, current_hand, deck):
+        """
+        current_hand, deck = cpu_hands[1].copy(), deck_left.copy()
+        """
+        probas_df = pd.DataFrame([[0.0] * 9] * 13, index=range(13), columns=range(9))
+        current_hand = current_hand[current_hand >= 0]
+        ch_suits = current_hand // 13
+        ch_values = current_hand % 13
+        n_remaining = 5 - len(current_hand)
+
+        deck_suit_counts = pd.Series(deck // 13).value_counts()
+        deck_value_counts = pd.Series(deck % 13).value_counts()
+        for v in ([-3,-2,-1,13,14,15] + [i for i in range(13) if i not in deck_value_counts.index]):
+            deck_value_counts[v] = 0
+        deck_n = len(deck)
+
+        ch_mode = mode(ch_values)
+        ch_mode_val, ch_mode_count = ch_mode.mode[0], ch_mode.count[0]
+        sec_ch_mode = mode(ch_values[ch_values != ch_mode_val])
+        if len(sec_ch_mode.mode) > 0:
+            sec_ch_mode_val, sec_ch_mode_count = sec_ch_mode.mode[0], sec_ch_mode.count[0]
+
+        if n_remaining == 0:
+            if ch_mode_count >= 2:
+                if ch_mode_count == 4:
+                    probas_df.loc[ch_mode_val, 7] = 1
+                    return probas_df
+                elif ch_mode_count == 3:
+                    if mode(ch_values[ch_values != ch_mode_val]).count[0] == 2:
+                        probas_df.loc[ch_mode_val, 6] = 1
+                        return probas_df
+                    else:
+                        probas_df.loc[ch_mode_val, 3] = 1
+                        return probas_df
+                if sec_ch_mode_count == 2:
+                    probas_df.loc[max(ch_mode_val, sec_ch_mode_val), 2] = 1
+                    return probas_df
+                probas_df.loc[ch_mode_val, 1] = 1
+                return probas_df
+
+            # straight
+            if max(ch_values) - min(ch_values) == 5:
+                if len(np.unique(ch_suits)) == 1:
+                    probas_df.loc[max(ch_values), 8] = 1
+                    return probas_df
+                else:
+                    probas_df.loc[max(ch_values), 4] = 1
+                    return probas_df
+            if 12 in ch_values:
+                temp_ch_values = ch_values.copy()
+                temp_ch_values[temp_ch_values == 12] = -1
+                if max(ch_values) - min(ch_values) == 5:
+                    probas_df.loc[max(ch_values), 8] = 1
+                    return probas_df
+                else:
+                    probas_df.loc[max(ch_values), 4] = 1
+                    return probas_df
+
+            # flush
+            if len(np.unique(ch_suits)) == 1:
+                probas_df.loc[max(ch_values), 5] = 1
+                return probas_df
+
+            probas_df.loc[max(ch_values), 0] = 1
+            return probas_df
+
+        if n_remaining == 1:
+            if ch_mode_count >= 2:
+                if ch_mode_count == 4:
+                    probas_df.loc[ch_mode_val, 7] = 1
+                    return probas_df
+                if ch_mode_count == 3 and mode(ch_values[ch_values != ch_mode_val]).count[0] == 2:
+                    probas_df.loc[ch_mode_val, 6] = 1
+                    return probas_df
+                if ch_mode_count == 2 and sec_ch_mode_count == 2:
+                    probas_df.loc[ch_mode_val, 6] = deck_value_counts[ch_mode_val]/deck_n
+                    probas_df.loc[sec_ch_mode_val, 6] = deck_value_counts[sec_ch_mode_val]/deck_n
+                    probas_df.loc[max(ch_mode_val, sec_ch_mode_val), 2] = 1 - probas_df.sum().sum()
+                    return probas_df
+                if ch_mode_count == 3:
+                    probas_df.loc[ch_mode_val, 6] = deck_value_counts[sec_ch_mode_val]/deck_n
+                    probas_df.loc[ch_mode_val, 7] = deck_value_counts[ch_mode_val]/deck_n
+                    probas_df.loc[ch_mode_val, 3] = 1 - probas_df.sum().sum()
+                    return probas_df
+                # only remaining case is 1p
+                probas_df.loc[ch_mode_val, 3] = deck_value_counts[ch_mode_val]/deck_n
+                for val in ch_values[ch_values != ch_mode_val]:
+                    probas_df.loc[val, 2] = deck_value_counts[val]/deck_n
+                probas_df.loc[ch_mode_val, 1] = 1 - probas_df.sum().sum()
+                return probas_df
+
+            # new HC odds
+            for val in deck_value_counts[(deck_value_counts.index > max(ch_values)) & (deck_value_counts.index <= 12)].index:
+                probas_df.loc[val, 0] = deck_value_counts[val] / deck_n
+
+            # straight odds
+            if max(ch_values) - min(ch_values) == 4:
+                missing_val = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values][0]
+                probas_df.loc[max(ch_values), 4] = deck_value_counts[missing_val]/deck_n
+            elif max(ch_values) - min(ch_values) == 3:
+                probas_df.loc[max(ch_values) + 1, 4] = deck_value_counts[max(ch_values) + 1] / deck_n
+                probas_df.loc[max(ch_values), 4] = deck_value_counts[min(ch_values) - 1] / deck_n
+                probas_df.loc[max(ch_values) + 1, 0] = 0
+            elif 12 in ch_values:
+                ch_values[ch_values == 12] = -1
+                if max(ch_values) - min(ch_values) == 4:
+                    missing_val = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values][0]
+                    probas_df.loc[max(ch_values), 4] = deck_value_counts[missing_val] / deck_n
+                    probas_df.loc[missing_val, 0] = 0
+                elif max(ch_values) - min(ch_values) == 3:
+                    probas_df.loc[max(ch_values) + 1, 4] = deck_value_counts[max(ch_values) + 1] / deck_n
+                    probas_df.loc[max(ch_values), 4] = deck_value_counts[min(ch_values) - 1] / deck_n
+                    probas_df.loc[max(ch_values) + 1, 0] = 0
+                ch_values[ch_values == -1] = 12
+
+            # flush odds
+            if len(np.unique(ch_suits)) == 1:
+                n_tot_cards = deck_suit_counts[ch_suits[0]]
+                over_cards = deck[(deck > max(current_hand)) & (deck < 13 * (ch_suits[0] + 1))]
+                for val in over_cards:
+                    probas_df.loc[val % 13, 5] = 1 / deck_n
+                    probas_df.loc[val % 13, 0] *= (deck_value_counts[val] - 1)/(deck_value_counts[val])
+                probas_df.loc[max(ch_values), 5] = (n_tot_cards - len(over_cards)) / deck_n
+
+            # pair odds
+            for val in ch_values:
+                probas_df.loc[val, 1] = deck_value_counts[val] / deck_n
+
+            # existing HC odds
+            probas_df.loc[max(ch_values), 0] = 1 - probas_df.sum().sum()
+            return probas_df
+
+        if n_remaining == 2:
+            extra_pair_vec = deck_value_counts * (deck_value_counts - 1) / (deck_n * (deck_n - 1))
+            extra_pair_vec[extra_pair_vec.index.isin(ch_values)] = 0
+
+            if ch_mode_count >= 2:
+                if ch_mode_count == 3:
+                    probas_df.loc[ch_mode_val, 7] = deck_value_counts[ch_mode_val] / deck_n + \
+                                                    (1 - deck_value_counts[ch_mode_val] / deck_n) * \
+                                                    (deck_value_counts[ch_mode_val] / (deck_n - 1))
+
+                    probas_df.loc[ch_mode_val, 6] = sum(extra_pair_vec)
+                    probas_df.loc[ch_mode_val, 3] = 1 - probas_df.sum().sum()
+                    return probas_df
+
+                # only remaining case is 1p
+
+                # tp
+                probas_df.loc[max(sec_ch_mode_val, ch_mode_val), 2] = 2 * (deck_value_counts[sec_ch_mode_val] / deck_n) * \
+                          (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum() / (deck_n - 1))
+
+                for val in extra_pair_vec[extra_pair_vec > 0].index:
+                    if val > ch_mode_val:
+                        probas_df.loc[val, 2] = extra_pair_vec[val]
+                    else:
+                        probas_df.loc[ch_mode_val, 2] += extra_pair_vec[val]
+
+                # toak
+                probas_df.loc[ch_mode_val, 3] = 2 * (deck_value_counts[ch_mode_val] / deck_n) * \
+                          (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum() / (deck_n - 1))
+                # fh
+                probas_df.loc[sec_ch_mode_val, 6] = (deck_value_counts[sec_ch_mode_val] / deck_n) * \
+                          ((deck_value_counts[sec_ch_mode_val] - 1) / (deck_n - 1))
+
+                probas_df.loc[ch_mode_val, 6] = 2 * (deck_value_counts[sec_ch_mode_val] / deck_n) * \
+                          (deck_value_counts[ch_mode_val] / (deck_n - 1))
+                # foak
+                probas_df.loc[ch_mode_val, 7] = (deck_value_counts[ch_mode_val] / deck_n) * \
+                          ((deck_value_counts[ch_mode_val] - 1) / (deck_n - 1))
+
+                probas_df.loc[ch_mode_val, 1] = 1 - probas_df.sum().sum()
+                return probas_df
+
+            # new HC odds
+            tot_nr_cards = deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum()
+            over_cards = np.flip(np.sort(deck_value_counts[(deck_value_counts.index > max(ch_values)) & (deck_value_counts.index <= 12)].index))
+            cumulative_overs = deck_value_counts[over_cards].cumsum()
+            for i in range(len(over_cards)):
+                val = over_cards[i]
+                probas_df.loc[val, 0] = 2 * (deck_value_counts[val] / deck_n) * ((tot_nr_cards - cumulative_overs.iloc[i]) / (deck_n - 1))
+
+            # straight odds
+            if max(ch_values) - min(ch_values) == 4:
+                missing_vals = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values]
+                probas_df.loc[max(ch_values), 4] = 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                   (deck_value_counts[missing_vals[1]] / (deck_n - 1))
+            elif max(ch_values) - min(ch_values) == 3:
+                missing_val = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values][0]
+                probas_df.loc[max(ch_values), 4] = 2 * (deck_value_counts[missing_val] / deck_n) * \
+                                                   (deck_value_counts[min(ch_values) - 1] / (deck_n - 1))
+                probas_df.loc[max(ch_values) + 1, 4] = 2 * (deck_value_counts[missing_val] / deck_n) * \
+                                                   (deck_value_counts[max(ch_values) + 1] / (deck_n - 1))
+                probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                           probas_df.loc[max(ch_values) + 1, 4])
+
+            elif max(ch_values) - min(ch_values) == 2:
+                poss_vals = [-2, -1, 1, 2]
+                needed_func = [min, min, max, max]
+                for s in range(3):
+                    probas_df.loc[max(ch_values) + (poss_vals[s+1] if poss_vals[s+1] > 0 else 0), 4] = 2 * \
+                        deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
+                        deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] / (deck_n * (deck_n - 1))
+                probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                           probas_df.loc[max(ch_values) + 1, 4])
+                probas_df.loc[max(ch_values) + 2, 0] = max(0, probas_df.loc[max(ch_values) + 2, 0] -
+                                                           probas_df.loc[max(ch_values) + 2, 4])
+
+            if 12 in ch_values:
+                ch_values[ch_values == 12] = -1
+                if max(ch_values) - min(ch_values) == 4:
+                    missing_vals = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values]
+                    probas_df.loc[max(ch_values), 4] = 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                       (deck_value_counts[missing_vals[1]] / (deck_n - 1))
+                elif max(ch_values) - min(ch_values) == 3:
+                    missing_val = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values][0]
+                    probas_df.loc[max(ch_values), 4] = 2 * (deck_value_counts[missing_val] / deck_n) * \
+                                                       (deck_value_counts[min(ch_values) - 1] / (deck_n - 1))
+                    probas_df.loc[max(ch_values) + 1, 4] = 2 * (deck_value_counts[missing_val] / deck_n) * \
+                                                           (deck_value_counts[max(ch_values) + 1] / (deck_n - 1))
+                    probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                               probas_df.loc[max(ch_values) + 1, 4])
+
+                elif max(ch_values) - min(ch_values) == 2:
+                    poss_vals = [-2, -1, 1, 2]
+                    needed_func = [min, min, max, max]
+                    for s in range(3):
+                        probas_df.loc[max(ch_values) + (poss_vals[s+1] if poss_vals[s+1] > 0 else 0)] = 2 * \
+                            deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
+                            deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] / (deck_n * (deck_n - 1))
+                    probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                               probas_df.loc[max(ch_values) + 1, 4])
+                    probas_df.loc[max(ch_values) + 2, 0] = max(0, probas_df.loc[max(ch_values) + 2, 0] -
+                                                               probas_df.loc[max(ch_values) + 2, 4])
+                ch_values[ch_values == -1] = 12
+
+            # flush odds
+            if len(np.unique(ch_suits)) == 1:
+                n_tot_cards = deck_suit_counts[ch_suits[0]]
+                over_cards = np.flip(np.sort(deck[(deck > max(current_hand)) & (deck < 13 * (ch_suits[0] + 1))]))
+                for i in range(len(over_cards)):
+                    val = over_cards[i] % 13
+                    probas_df.loc[val, 5] = 2 * (1 / deck_n) * (n_tot_cards - i - 1) / (deck_n - 1)
+                    probas_df.loc[val, 0] = max(0, probas_df.loc[val, 0] - probas_df.loc[val, 5])
+
+                probas_df.loc[max(ch_values), 5] = ((n_tot_cards - len(over_cards)) / deck_n) * \
+                                                   (n_tot_cards - len(over_cards) - 1) / (deck_n - 1)
+
+            # pair odds
+            for val in ch_values:
+                probas_df.loc[val, 1] = 2 * (deck_value_counts[val] / deck_n) * \
+                            (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum() / (deck_n - 1))
+            for val in extra_pair_vec[extra_pair_vec > 0].index:
+                probas_df.loc[val, 1] = extra_pair_vec[val]
+
+            # toak odds
+            for val in ch_values:
+                probas_df.loc[val, 3] = (deck_value_counts[val] / deck_n) * ((deck_value_counts[val] - 1) / (deck_n - 1))
+
+            # tp odds
+            sorted_ch_vals = np.flip(np.sort(ch_values.copy()))
+            for i in range(len(sorted_ch_vals) - 1):
+                probas_df.loc[sorted_ch_vals[i], 2] = 2 * (deck_value_counts[sorted_ch_vals[i]] / deck_n) * \
+                          (sum(deck_value_counts[deck_value_counts.index.isin(sorted_ch_vals[(i+1):])]) / (deck_n - 1))
+
+            # existing HC odds
+            probas_df.loc[max(ch_values), 0] = 1 - probas_df.sum().sum()
+            return probas_df
+
+        if n_remaining == 3:
+            extra_pair_vec = 3 * deck_value_counts * (deck_value_counts - 1) * \
+                             (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum()) / \
+                             (deck_n * (deck_n - 1) * (deck_n - 2))
+            extra_pair_vec[extra_pair_vec.index.isin(ch_values)] = 0
+
+            extra_toak_vec = deck_value_counts * (deck_value_counts - 1) * (deck_value_counts - 2) / \
+                             (deck_n * (deck_n - 1) * (deck_n - 2))
+            extra_toak_vec[extra_toak_vec.index.isin(ch_values)] = 0
+
+            extra_pair_vec = extra_pair_vec - extra_toak_vec
+
+            extra_two_unrelated_odds = sum([i * sum(deck_value_counts[~deck_value_counts.index.isin(ch_values)] == i) *
+                                            (sum(deck_value_counts[~deck_value_counts.index.isin(ch_values)]) - i)
+                                            for i in range(1, 5)]) / ((deck_n - 1) * (deck_n - 2))
+
+            if ch_mode_count == 2:
+                # tp odds
+                for val in extra_pair_vec[extra_pair_vec > 0].index:
+                    if val > ch_mode_val:
+                        probas_df.loc[val, 2] = extra_pair_vec[val]
+                    else:
+                        probas_df.loc[ch_mode_val, 2] += extra_pair_vec[val]
+
+                # toak odds
+                probas_df.loc[ch_mode_val, 3] = 3 * (deck_value_counts[ch_mode_val] / deck_n) * extra_two_unrelated_odds
+
+                # fh odds
+                for val in extra_toak_vec[extra_toak_vec > 0].index:
+                    probas_df.loc[val, 6] = extra_toak_vec[val]
+
+                probas_df.loc[ch_mode_val, 6] = 3 * (deck_value_counts[ch_mode_val] / deck_n) * sum(extra_pair_vec)
+
+                # foak odds
+                probas_df.loc[ch_mode_val, 7] = 3 * (deck_value_counts[ch_mode_val] * (deck_value_counts[ch_mode_val] - 1) *
+                     deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum()) / (deck_n * (deck_n - 1) * (deck_n - 2))
+
+                # current pair only odds
+                probas_df.loc[ch_mode_val, 1] = 1 - probas_df.sum().sum()
+                return probas_df
+
+            # new HC odds
+            tot_nr_cards = deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum()
+            over_cards = np.flip(np.sort(deck_value_counts[(deck_value_counts.index > max(ch_values)) & (deck_value_counts.index <= 12)].index))
+            cumulative_overs = deck_value_counts[over_cards].cumsum()
+            for i in range(len(over_cards)):
+                val = over_cards[i]
+                probas_df.loc[val, 0] = 3 * (deck_value_counts[val] / deck_n) * \
+                                        ((tot_nr_cards - cumulative_overs.iloc[i]) / (deck_n - 1)) * \
+                                        ((tot_nr_cards - cumulative_overs.iloc[i] - 1) / (deck_n - 2))
+
+            # straight odds
+            if max(ch_values) - min(ch_values) == 4:
+                missing_vals = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values]
+                probas_df.loc[max(ch_values), 4] = 3 * 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                   (deck_value_counts[missing_vals[1]] / (deck_n - 1)) * \
+                                                   (deck_value_counts[missing_vals[2]] / (deck_n - 2))
+
+            elif max(ch_values) - min(ch_values) == 3:
+                missing_vals = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values]
+                probas_df.loc[max(ch_values) + 1, 4] = 3 * 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                   (deck_value_counts[missing_vals[1]] / (deck_n - 1)) * \
+                                                   (deck_value_counts[max(ch_values) + 1] / (deck_n - 2))
+                probas_df.loc[max(ch_values), 4] = 3 * 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                   (deck_value_counts[missing_vals[1]] / (deck_n - 1)) * \
+                                                   (deck_value_counts[min(ch_values) - 1] / (deck_n - 2))
+
+            elif max(ch_values) - min(ch_values) == 2:
+                missing_val = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values][0]
+                poss_vals = [-2, -1, 1, 2]
+                needed_func = [min, min, max, max]
+                for s in range(3):
+                    probas_df.loc[max(ch_values) + (poss_vals[s+1] if poss_vals[s+1] > 0 else 0), 4] = 3 * 2 * \
+                        deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
+                        deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] * \
+                        deck_value_counts[missing_val] / (deck_n * (deck_n - 1) * (deck_n - 2))
+
+                probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                           probas_df.loc[max(ch_values) + 1, 4])
+                probas_df.loc[max(ch_values) + 2, 0] = max(0, probas_df.loc[max(ch_values) + 2, 0] -
+                                                           probas_df.loc[max(ch_values) + 2, 4])
+
+            elif max(ch_values) - min(ch_values) == 1:
+                poss_vals = [-3, -2, -1, 1, 2, 3]
+                needed_func = [min, min, min, max, max, max]
+                for s in range(4):
+                    addition = (poss_vals[s+2] if poss_vals[s+2] > 0 else (poss_vals[s+1] if poss_vals[s+1] > 0 else 0))
+                    probas_df.loc[(max(ch_values) + addition), 4] = 3 * 2 * \
+                        deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
+                        deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] * \
+                        deck_value_counts[needed_func[s+2](ch_values) + poss_vals[s+2]] / \
+                        (deck_n * (deck_n - 1) * (deck_n - 2))
+
+                probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                           probas_df.loc[max(ch_values) + 1, 4])
+                probas_df.loc[max(ch_values) + 2, 0] = max(0, probas_df.loc[max(ch_values) + 2, 0] -
+                                                           probas_df.loc[max(ch_values) + 2, 4])
+                probas_df.loc[max(ch_values) + 3, 0] = max(0, probas_df.loc[max(ch_values) + 3, 0] -
+                                                           probas_df.loc[max(ch_values) + 3, 4])
+
+            if 12 in ch_values:
+                ch_values[ch_values == 12] = -1
+                if max(ch_values) - min(ch_values) == 4:
+                    missing_vals = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values]
+                    probas_df.loc[max(ch_values), 4] = 3 * 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                       (deck_value_counts[missing_vals[1]] / (deck_n - 1)) * \
+                                                       (deck_value_counts[missing_vals[2]] / (deck_n - 2))
+
+                elif max(ch_values) - min(ch_values) == 3:
+                    missing_vals = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values]
+                    probas_df.loc[max(ch_values) + 1, 4] = 3 * 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                       (deck_value_counts[missing_vals[1]] / (deck_n - 1)) * \
+                                                       (deck_value_counts[max(ch_values) + 1] / (deck_n - 2))
+                    probas_df.loc[max(ch_values), 4] = 3 * 2 * (deck_value_counts[missing_vals[0]] / deck_n) * \
+                                                       (deck_value_counts[missing_vals[1]] / (deck_n - 1)) * \
+                                                       (deck_value_counts[min(ch_values) - 1] / (deck_n - 2))
+
+                elif max(ch_values) - min(ch_values) == 2:
+                    missing_val = [x for x in range(min(ch_values), max(ch_values)) if x not in ch_values][0]
+                    poss_vals = [-2, -1, 1, 2]
+                    needed_func = [min, min, max, max]
+                    for s in range(3):
+                        probas_df.loc[max(ch_values) + (poss_vals[s+1] if poss_vals[s+1] > 0 else 0), 4] = 3 * 2 * \
+                            deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
+                            deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] * \
+                            deck_value_counts[missing_val] / (deck_n * (deck_n - 1) * (deck_n - 2))
+
+                    probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                               probas_df.loc[max(ch_values) + 1, 4])
+                    probas_df.loc[max(ch_values) + 2, 0] = max(0, probas_df.loc[max(ch_values) + 2, 0] -
+                                                               probas_df.loc[max(ch_values) + 2, 4])
+
+                elif max(ch_values) - min(ch_values) == 1:
+                    poss_vals = [-3, -2, -1, 1, 2, 3]
+                    needed_func = [min, min, min, max, max, max]
+                    for s in range(4):
+                        addition = (poss_vals[s+2] if poss_vals[s+2] > 0 else (poss_vals[s+1] if poss_vals[s+1] > 0 else 0))
+                        probas_df.loc[(max(ch_values) + addition), 4] = 3 * 2 * \
+                            deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
+                            deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] * \
+                            deck_value_counts[needed_func[s+2](ch_values) + poss_vals[s+2]] / \
+                            (deck_n * (deck_n - 1) * (deck_n - 2))
+
+                    probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
+                                                               probas_df.loc[max(ch_values) + 1, 4])
+                    probas_df.loc[max(ch_values) + 2, 0] = max(0, probas_df.loc[max(ch_values) + 2, 0] -
+                                                               probas_df.loc[max(ch_values) + 2, 4])
+                    probas_df.loc[max(ch_values) + 3, 0] = max(0, probas_df.loc[max(ch_values) + 3, 0] -
+                                                               probas_df.loc[max(ch_values) + 3, 4])
+
+                ch_values[ch_values == -1] = 12
+
+            # flush odds
+            if len(np.unique(ch_suits)) == 1:
+                n_tot_cards = deck_suit_counts[ch_suits[0]]
+                over_cards = np.flip(np.sort(deck[(deck > max(current_hand)) & (deck < 13 * (ch_suits[0] + 1))]))
+                for i in range(len(over_cards)):
+                    val = over_cards[i] % 13
+                    probas_df.loc[val, 5] = 3 * (1 / deck_n) * \
+                                            (n_tot_cards - i - 1) / (deck_n - 1) * \
+                                            (n_tot_cards - i - 2) / (deck_n - 2)
+                    probas_df.loc[val, 0] = max(0, probas_df.loc[val, 0] - probas_df.loc[val, 5])
+
+                probas_df.loc[max(ch_values), 5] = ((n_tot_cards - len(over_cards)) / deck_n) * \
+                                                   (n_tot_cards - len(over_cards) - 1) / (deck_n - 1) * \
+                                                   (n_tot_cards - len(over_cards) - 2) / (deck_n - 2)
+
+            # pair odds
+            for val in ch_values:
+                probas_df.loc[val, 1] = 3 * (deck_value_counts[val] / deck_n) * extra_two_unrelated_odds
+            for val in extra_pair_vec[extra_pair_vec > 0].index:
+                probas_df.loc[val, 1] = extra_pair_vec[val]
+
+            # tp odds - 2 existing cards
+            sorted_ch_vals = np.flip(np.sort(ch_values.copy()))
+            for i in range(len(sorted_ch_vals) - 1):
+                probas_df.loc[sorted_ch_vals[i], 2] = 3 * 2 * (deck_value_counts[sorted_ch_vals[i]] / deck_n) * \
+                          (sum(deck_value_counts[deck_value_counts.index.isin(sorted_ch_vals[(i+1):])]) / (deck_n - 1)) * \
+                          (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum() / (deck_n - 2))
+
+            # tp odds - 1 existing + extra pair
+            for ch_val in ch_values:
+                for extra_val in extra_pair_vec[(extra_pair_vec > 0)].index:
+                    # we make up for 'extra_pair_vec' having already accounted for an extra unrelated card
+                    if ch_val > extra_val:
+                        probas_df.loc[ch_val, 2] += 3 * extra_pair_vec[extra_val] * \
+                                                    (deck_value_counts[ch_val]) / \
+                                                    (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum())
+                    else:
+                        probas_df.loc[extra_val, 2] += 3 * extra_pair_vec[extra_val] * \
+                                                    (deck_value_counts[ch_val]) / \
+                                                    (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum())
+
+            # toak odds
+            for val in ch_values:
+                probas_df.loc[val, 3] = 3 * (deck_value_counts[val] / deck_n) * \
+                                        ((deck_value_counts[val] - 1) / (deck_n - 1)) * \
+                                        (deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum() / (deck_n - 2))
+
+            for val in extra_toak_vec[extra_toak_vec > 0].index:
+                probas_df.loc[val, 3] = extra_toak_vec[val]
+
+            # fh odds
+            probas_df.loc[ch_values[0], 6] = 3 * (deck_value_counts[ch_values[0]] / deck_n) * \
+                                             ((deck_value_counts[ch_values[0]] - 1) / (deck_n - 1)) * \
+                                             ((deck_value_counts[ch_values[1]]) / (deck_n - 2))
+
+            probas_df.loc[ch_values[1], 6] = 3 * (deck_value_counts[ch_values[1]] / deck_n) * \
+                                             ((deck_value_counts[ch_values[1]] - 1) / (deck_n - 1)) * \
+                                             ((deck_value_counts[ch_values[0]]) / (deck_n - 2))
+            # foak odds
+            for val in ch_values:
+                probas_df.loc[val, 7] = (deck_value_counts[val] / deck_n) * \
+                                        ((deck_value_counts[val] - 1) / (deck_n - 1)) * \
+                                        ((deck_value_counts[val] - 2) / (deck_n - 2))
+
+            # existing HC odds
+            probas_df.loc[max(ch_values), 0] = 1 - probas_df.sum().sum()
+            return probas_df
 
     def calc_hand_win_proba(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
         if sum(cpu_hand == -1) == 0:
@@ -431,16 +916,16 @@ class NonMlPlayer():
         cpu_hand_vals = np.array([val % 13 if val >= 0 else -1 for val in cpu_hand])
         opp_hand_vals = np.array([val % 13 if val >= 0 else -1 for val in opp_hand])
 
-        lead, lead_ind = self.get_curr_leader(cpu_hand_vals, opp_hand_vals)
+        lead = self.get_curr_leader(cpu_hand_vals, opp_hand_vals)
 
         ### both don't have pairs yet
         # high card calc:
         if cpu_probas[0] > 0 and opp_probas[0] > 0:
             if lead == "cpu":
-                over_cards = sum(deck_values > cpu_hand_vals[lead_ind])
+                over_cards = sum(deck_values > max(cpu_hand_vals))
                 res_vec[0] = 1 - ((over_cards / deck_n) ** (1 / n_remaining)) * 0.5
             elif lead == "opp":
-                over_cards = sum(deck_values > opp_hand_vals[lead_ind])
+                over_cards = sum(deck_values > max(opp_hand_vals))
                 res_vec[0] = ((over_cards / deck_n) ** (1 / n_remaining)) * 0.5
 
             # pair, tp, toak, fh, foak calc:
@@ -526,10 +1011,12 @@ class NonMlPlayer():
         if self.proba_method == "optimistic":
             return self.optimistic_probas(self.calc_random_hand_probas(current_hand, deck), 4 - (len(deck) - 2) // 10)
 
+        if self.proba_method == "extended":
+            return list(self.calc_extended_random_hand_probas(current_hand, deck).sum())
         return self.calc_random_hand_probas(current_hand, deck)
 
     def rearrange_hand(self, hand):
-        hand_vals = np.array([val % 13 if val > 0 else -1 for val in hand])
+        hand_vals = np.array([val % 13 if val >= 0 else -1 for val in hand])
         hand_vals = list(hand_vals[hand_vals >= 0])
         hand_order = np.flip(np.argsort([i + (hand_vals.count(i) - 1) * 13 for i in hand_vals]))
         rearrranged_hand = np.array(hand_vals)[hand_order]
@@ -540,10 +1027,10 @@ class NonMlPlayer():
         opp_hand_vals = self.rearrange_hand(opp_hand)
         for i in range(5):
             if cpu_hand_vals[i] > opp_hand_vals[i]:
-                return "cpu", i
+                return "cpu"
             elif cpu_hand_vals[i] < opp_hand_vals[i]:
-                return "opp", i
-        return "tie", -1
+                return "opp"
+        return "tie"
 
     def log_data(self, probas_df, dec_win_probas_list):
         probas_df["game_id"] = self.game_id

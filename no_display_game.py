@@ -93,7 +93,7 @@ def calculate_winner(game_board):
     return winner, finalLabels, handCode
 
 
-nmlp0 = NonMlPlayer(proba_method="optimistic")
+nmlp0 = NonMlPlayer(proba_method="extended")
 nmlp1 = NonMlPlayer(proba_method="none")  # RandomPlayer()
 player_0_hand_count = [0] * 9
 player_1_hand_count = [0] * 9
