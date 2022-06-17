@@ -33,7 +33,7 @@ class NonMlPlayer():
         self.proba_method = proba_method
         if proba_method == "convd_probas":
             self.proba_conv_df = pd.read_parquet("proba_conv_df.parq")
-            self.proba_conv_df["proba"] = self.proba_conv_df["proba"].apply(lambda x: round(x,4))
+            self.proba_conv_df["proba"] = self.proba_conv_df["proba"].apply(lambda x: round(x, 4))
             self.proba_conv_df.index = 10*self.proba_conv_df["level"] + self.proba_conv_df["hand_type"] + self.proba_conv_df["proba"]
             self.proba_conv_df = self.proba_conv_df["convd"]
         self.game_id = 0
@@ -398,7 +398,7 @@ class NonMlPlayer():
 
             return [high_card_odds, pair_odds, tp_odds, toak_odds, straight_odds, flush_odds, fh_odds, foak_odds, straight_odds * flush_odds]
 
-    def calc_extended_random_hand_probas(self, current_hand, deck):
+    def depreciated_calc_extended_random_hand_probas(self, current_hand, deck):
         """
         current_hand, deck = cpu_hands[1].copy(), deck_left.copy()
         """
@@ -426,7 +426,7 @@ class NonMlPlayer():
                     probas_df.loc[ch_mode_val, 7] = 1
                     return probas_df
                 elif ch_mode_count == 3:
-                    if mode(ch_values[ch_values != ch_mode_val]).count[0] == 2:
+                    if sec_ch_mode_count == 2:
                         probas_df.loc[ch_mode_val, 6] = 1
                         return probas_df
                     else:
@@ -450,11 +450,12 @@ class NonMlPlayer():
                 temp_ch_values = ch_values.copy()
                 temp_ch_values[temp_ch_values == 12] = -1
                 if max(ch_values) - min(ch_values) == 5:
-                    probas_df.loc[max(ch_values), 8] = 1
-                    return probas_df
-                else:
-                    probas_df.loc[max(ch_values), 4] = 1
-                    return probas_df
+                    if len(np.unique(ch_suits)) == 1:
+                        probas_df.loc[max(ch_values), 8] = 1
+                        return probas_df
+                    else:
+                        probas_df.loc[max(ch_values), 4] = 1
+                        return probas_df
 
             # flush
             if len(np.unique(ch_suits)) == 1:
@@ -519,7 +520,7 @@ class NonMlPlayer():
                 over_cards = deck[(deck > max(current_hand)) & (deck < 13 * (ch_suits[0] + 1))]
                 for val in over_cards:
                     probas_df.loc[val % 13, 5] = 1 / deck_n
-                    probas_df.loc[val % 13, 0] *= (deck_value_counts[val] - 1)/(deck_value_counts[val])
+                    probas_df.loc[val % 13, 0] *= (deck_value_counts[val % 13] - 1)/(deck_value_counts[val % 13])
                 probas_df.loc[max(ch_values), 5] = (n_tot_cards - len(over_cards)) / deck_n
 
             # pair odds
@@ -625,7 +626,7 @@ class NonMlPlayer():
                     poss_vals = [-2, -1, 1, 2]
                     needed_func = [min, min, max, max]
                     for s in range(3):
-                        probas_df.loc[max(ch_values) + (poss_vals[s+1] if poss_vals[s+1] > 0 else 0)] = 2 * \
+                        probas_df.loc[max(ch_values) + (poss_vals[s+1] if poss_vals[s+1] > 0 else 0), 4] = 2 * \
                             deck_value_counts[needed_func[s](ch_values) + poss_vals[s]] * \
                             deck_value_counts[needed_func[s+1](ch_values) + poss_vals[s+1]] / (deck_n * (deck_n - 1))
                     probas_df.loc[max(ch_values) + 1, 0] = max(0, probas_df.loc[max(ch_values) + 1, 0] -
@@ -886,6 +887,496 @@ class NonMlPlayer():
             # existing HC odds
             probas_df.loc[max(ch_values), 0] = 1 - probas_df.sum().sum()
             return probas_df
+
+    def calc_extended_random_hand_probas(self, current_hand, deck):
+        """
+        replaced:
+        deck_value_counts[~deck_value_counts.index.isin(ch_values)].sum()
+        with
+        sum([1 for x in deck_values if x not in ch_values])
+        12 matches
+
+        max_ch_values = max(ch_values) * 127
+
+        """
+        probas_list = [[0.0 for i in range(9)] for j in range(13)]
+        current_hand = current_hand[current_hand >= 0]
+        ch_suits = current_hand // 13
+        ch_values = current_hand % 13
+        n_remaining = 5 - len(current_hand)
+        
+        deck_suits = deck // 13
+        deck_values = deck % 13
+        max_ch_values = max(ch_values)
+        min_ch_values = min(ch_values)
+        deck_n = len(deck)
+
+        ch_mode = mode(ch_values)
+        ch_mode_val, ch_mode_count = ch_mode.mode[0], ch_mode.count[0]
+        sec_ch_mode = mode(ch_values[ch_values != ch_mode_val])
+        if len(sec_ch_mode.mode) > 0:
+            sec_ch_mode_val, sec_ch_mode_count = sec_ch_mode.mode[0], sec_ch_mode.count[0]
+
+        if n_remaining == 0:
+            if ch_mode_count >= 2:
+                if ch_mode_count == 4:
+                    probas_list[ch_mode_val][7] = 1
+                    return probas_list
+                elif ch_mode_count == 3:
+                    if sec_ch_mode_count == 2:
+                        probas_list[ch_mode_val][6] = 1
+                        return probas_list
+                    else:
+                        probas_list[ch_mode_val][3] = 1
+                        return probas_list
+                if sec_ch_mode_count == 2:
+                    probas_list[max(ch_mode_val, sec_ch_mode_val)][2] = 1
+                    return probas_list
+                probas_list[ch_mode_val][1] = 1
+                return probas_list
+
+            # straight
+            if 12 in ch_values and sum(ch_values < 4) == (4 - n_remaining):
+                ch_values[ch_values == 12] = -1
+            if max(ch_values) - min_ch_values == 5:
+                if len(np.unique(ch_suits)) == 1:
+                    probas_list[max(ch_values)][8] = 1
+                    return probas_list
+                else:
+                    probas_list[max(ch_values)][4] = 1
+                    return probas_list
+
+            # flush
+            if len(np.unique(ch_suits)) == 1:
+                probas_list[max_ch_values][5] = 1
+                return probas_list
+
+            probas_list[max_ch_values][0] = 1
+            return probas_list
+
+        if n_remaining == 1:
+            if ch_mode_count >= 2:
+                if ch_mode_count == 4:
+                    probas_list[ch_mode_val][7] = 1
+                    return probas_list
+                if ch_mode_count == 3 and mode(ch_values[ch_values != ch_mode_val]).count[0] == 2:
+                    probas_list[ch_mode_val][6] = 1
+                    return probas_list
+                if ch_mode_count == 2 and sec_ch_mode_count == 2:
+                    probas_list[ch_mode_val][6] = sum([1 for val in deck_values if val == ch_mode_val])/deck_n
+                    probas_list[sec_ch_mode_val][6] = sum([1 for val in deck_values if val == sec_ch_mode_val])/deck_n
+                    probas_list[max(ch_mode_val, sec_ch_mode_val)][2] = 1 - sum([sum(l) for l in probas_list])
+                    return probas_list
+                if ch_mode_count == 3:
+                    probas_list[ch_mode_val][6] = sum([1 for val in deck_values if val == sec_ch_mode_val])/deck_n
+                    probas_list[ch_mode_val][7] = sum([1 for val in deck_values if val == ch_mode_val])/deck_n
+                    probas_list[ch_mode_val][3] = 1 - sum([sum(l) for l in probas_list])
+                    return probas_list
+                # only remaining case is 1p
+                probas_list[ch_mode_val][3] = sum([1 for val in deck_values if val == ch_mode_val])/deck_n
+                for val in ch_values[ch_values != ch_mode_val]:
+                    probas_list[val][2] = sum([1 for i in deck_values if i == val])/deck_n
+                probas_list[ch_mode_val][1] = 1 - sum([sum(l) for l in probas_list])
+                return probas_list
+
+            # new HC odds
+            for val in [i for i in range(13) if i > max_ch_values]:
+                probas_list[val][0] = sum([1 for i in deck_values if i == val]) / deck_n
+
+            # straight odds
+            if 12 in ch_values and sum(ch_values < 4) == (4 - n_remaining):
+                ch_values[ch_values == 12] = -1
+                max_ch_values = max(ch_values)
+                min_ch_values = min(ch_values)
+            elif max_ch_values < 4:
+                deck_values[deck_values == 12] = -1
+
+            if max_ch_values - min_ch_values == 4:
+                missing_val = [x for x in range(min_ch_values, max_ch_values) if x not in ch_values][0]
+                probas_list[max_ch_values][4] = sum([1 for val in deck_values if val == missing_val])/deck_n
+
+            elif max_ch_values - min_ch_values == 3:
+                if min_ch_values > -1:
+                    probas_list[max_ch_values][4] = sum([1 for val in deck_values if val == (min_ch_values - 1)]) / deck_n
+                if max_ch_values < 12:
+                    probas_list[max_ch_values + 1][4] = sum([1 for val in deck_values if val == (max_ch_values + 1)]) / deck_n
+                    probas_list[max_ch_values + 1][0] = 0
+
+            if -1 in ch_values:
+                ch_values[ch_values == -1] = 12
+                max_ch_values = max(ch_values)
+                min_ch_values = min(ch_values)
+            elif max_ch_values < 4:
+                deck_values[deck_values == -1] = 12
+
+            # flush odds
+            if len(np.unique(ch_suits)) == 1:
+                n_tot_cards = sum([1 for val in deck_suits if val == ch_suits[0]])
+                over_cards = deck[(deck > max(current_hand)) & (deck < 13 * (ch_suits[0] + 1))]
+                for val in over_cards:
+                    probas_list[val % 13][5] = 1 / deck_n
+                    probas_list[val % 13][0] *= (sum([1 for i in deck_values if i == val]) - 1)/(sum([1 for i in deck_values if i == val]))
+                probas_list[max_ch_values][5] = (n_tot_cards - len(over_cards)) / deck_n
+
+            # pair odds
+            for val in ch_values:
+                probas_list[val][1] = sum([1 for i in deck_values if i == val]) / deck_n
+
+            # existing HC odds
+            probas_list[max_ch_values][0] = 1 - sum([sum(l) for l in probas_list])
+            return probas_list
+        """
+        probas_df.loc\[([\s\w\d]*), (\d)\]
+        probas_list[$1][$2]
+        
+        deck_value_counts\[([a-z_]*)\]
+        sum([1 for val in deck_values if val == $1])
+        
+        return probas_df
+        return probas_list
+        
+        probas_df.sum().sum()
+        sum([sum(l) for l in probas_list])
+        
+        deck_value_counts\[([_a-z\d\w\[+-]*\])\]
+        sum([1 for val in deck_values if val == $1])
+        """
+        if n_remaining == 2:
+            extra_pair_odds_list = [sum([1 for i in deck_values if i == val]) for val in range(13)]
+            extra_pair_odds_list = [val * (val - 1) / (deck_n * (deck_n - 1)) for val in extra_pair_odds_list]
+            for val in ch_values:
+                extra_pair_odds_list[val] = 0
+
+            if ch_mode_count >= 2:
+                if ch_mode_count == 3:
+                    probas_list[ch_mode_val][7] = sum([1 for val in deck_values if val == ch_mode_val]) / deck_n + \
+                                                    (1 - sum([1 for val in deck_values if val == ch_mode_val]) / deck_n) * \
+                                                    (sum([1 for val in deck_values if val == ch_mode_val]) / (deck_n - 1))
+
+                    probas_list[ch_mode_val][6] = sum(extra_pair_odds_list)
+                    probas_list[ch_mode_val][3] = 1 - sum([sum(l) for l in probas_list])
+                    return probas_list
+
+                # only remaining case is 1p
+                # tp
+                probas_list[max(sec_ch_mode_val, ch_mode_val)][2] = 2 * \
+                          (sum([1 for val in deck_values if val == sec_ch_mode_val]) / deck_n) * \
+                          (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 1))
+
+                for val in range(13):
+                    if val not in ch_values:
+                        if val > ch_mode_val:
+                            probas_list[val][2] = extra_pair_odds_list[val]
+                        else:
+                            probas_list[ch_mode_val][2] += extra_pair_odds_list[val]
+
+                # toak
+                probas_list[ch_mode_val][3] = 2 * (sum([1 for val in deck_values if val == ch_mode_val]) / deck_n) * \
+                          (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 1))
+                # fh
+                probas_list[sec_ch_mode_val][6] = (sum([1 for val in deck_values if val == sec_ch_mode_val]) / deck_n) * \
+                          ((sum([1 for val in deck_values if val == sec_ch_mode_val]) - 1) / (deck_n - 1))
+
+                probas_list[ch_mode_val][6] = 2 * (sum([1 for val in deck_values if val == sec_ch_mode_val]) / deck_n) * \
+                          (sum([1 for val in deck_values if val == ch_mode_val]) / (deck_n - 1))
+                # foak
+                probas_list[ch_mode_val][7] = (sum([1 for val in deck_values if val == ch_mode_val]) / deck_n) * \
+                          ((sum([1 for val in deck_values if val == ch_mode_val]) - 1) / (deck_n - 1))
+
+                probas_list[ch_mode_val][1] = 1 - sum([sum(l) for l in probas_list])
+                return probas_list
+
+            # new HC odds
+            tot_nr_cards = sum([1 for x in deck_values if x not in ch_values])
+            over_cards = [i for i in range(12,-1,-1) if i > max_ch_values]
+            cumulative_overs = 0
+            for i in range(len(over_cards)):
+                val = over_cards[i]
+                n_overs = sum([1 for i in deck_values if i == val])
+                probas_list[val][0] = 2 * (n_overs / deck_n) * ((tot_nr_cards - cumulative_overs) / (deck_n - 1))
+                cumulative_overs += n_overs
+
+            # straight odds
+            if 12 in ch_values and sum(ch_values < 4) == (4 - n_remaining):
+                ch_values[ch_values == 12] = -1
+                max_ch_values = max(ch_values)
+                min_ch_values = min(ch_values)
+            elif max_ch_values < 4:
+                deck_values[deck_values == 12] = -1
+
+            if max_ch_values - min_ch_values == 4:
+                missing_vals = [x for x in range(min_ch_values, max_ch_values) if x not in ch_values]
+                probas_list[max_ch_values][4] = 2 * (sum([1 for val in deck_values if val == missing_vals[0]]) / deck_n) * \
+                                                   (sum([1 for val in deck_values if val == missing_vals[1]]) / (deck_n - 1))
+
+            elif max_ch_values - min_ch_values == 3:
+                missing_val = [x for x in range(min_ch_values, max_ch_values) if x not in ch_values][0]
+                if min_ch_values > -1:
+                    probas_list[max_ch_values][4] = 2 * (sum([1 for val in deck_values if val == missing_val]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / (deck_n - 1))
+                if max_ch_values < 12:
+                    probas_list[max_ch_values + 1][4] = 2 * (sum([1 for val in deck_values if val == missing_val]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / (deck_n - 1))
+                    probas_list[max_ch_values + 1][0] = probas_list[max_ch_values + 1][0] - probas_list[max_ch_values + 1][4]
+
+            elif max_ch_values - min_ch_values == 2:
+                if min_ch_values > 0:
+                    probas_list[max_ch_values][4] = 2 * (sum([1 for val in deck_values if val == (min_ch_values - 2)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / (deck_n - 1))
+                if max_ch_values < 12 and min_ch_values > -1:
+                    probas_list[max_ch_values + 1][4] = 2 * (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / (deck_n - 1))
+                    probas_list[max_ch_values + 1][0] = probas_list[max_ch_values + 1][0] - probas_list[max_ch_values + 1][4]
+                if max_ch_values < 11:
+                    probas_list[max_ch_values + 2][4] = 2 * (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 2)]) / (deck_n - 1))
+                    probas_list[max_ch_values + 2][0] = probas_list[max_ch_values + 2][0] - probas_list[max_ch_values + 2][4]
+
+            if -1 in ch_values:
+                ch_values[ch_values == -1] = 12
+                max_ch_values = max(ch_values)
+                min_ch_values = min(ch_values)
+            elif max_ch_values < 4:
+                deck_values[deck_values == -1] = 12
+
+
+            # flush odds
+            if len(np.unique(ch_suits)) == 1:
+                n_tot_cards = sum([1 for val in deck_suits if val == ch_suits[0]])
+                over_cards = [i for i in range(12,-1,-1) if (i > max(current_hand)) and (i < 13 * (ch_suits[0] + 1))]
+                for i in range(len(over_cards)):
+                    val = over_cards[i] % 13
+                    probas_list[val][5] = 2 * (1 / deck_n) * (n_tot_cards - i - 1) / (deck_n - 1)
+                    probas_list[val][0] = max(0, probas_list[val][0] - probas_list[val][5])
+
+                probas_list[max_ch_values][5] = ((n_tot_cards - len(over_cards)) / deck_n) * \
+                                                   (n_tot_cards - len(over_cards) - 1) / (deck_n - 1)
+
+            # pair odds
+            for val in ch_values:
+                probas_list[val][1] = 2 * (sum([1 for i in deck_values if i == val]) / deck_n) * \
+                            (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 1))
+            for val in range(13):
+                if val not in ch_values:
+                    probas_list[val][1] = extra_pair_odds_list[val]
+
+            # toak odds
+            for val in ch_values:
+                probas_list[val][3] = (sum([1 for i in deck_values if i == val]) / deck_n) * ((sum([1 for i in deck_values if i == val]) - 1) / (deck_n - 1))
+
+            # tp odds
+            probas_list[max_ch_values][2] = 2 * (sum([1 for val in deck_values if val == ch_values[0]]) / deck_n) * \
+                      (sum([1 for val in deck_values if val == ch_values[1]]) / (deck_n - 1))
+            probas_list[max_ch_values][2] += 2 * (sum([1 for val in deck_values if val == ch_values[1]]) / deck_n) * \
+                      (sum([1 for val in deck_values if val == ch_values[2]]) / (deck_n - 1))
+            probas_list[max_ch_values][2] += 2 * (sum([1 for val in deck_values if val == ch_values[0]]) / deck_n) * \
+                      (sum([1 for val in deck_values if val == ch_values[2]]) / (deck_n - 1))
+
+            # existing HC odds
+            probas_list[max_ch_values][0] = 1 - sum([sum(l) for l in probas_list])
+            return probas_list
+
+        # probas_df = pd.DataFrame([[0.0] * 9] * 13, index=range(13), columns=range(9))
+        # deck_value_counts = pd.Series(deck % 13).value_counts()
+        # deck_value_counts = deck_value_counts.append(pd.Series(index=[-3,-2,-1,13,14,15] + [i for i in range(13) if i not in deck_value_counts.index]).fillna(0))
+        # deck_suit_counts = pd.Series(deck // 13).value_counts()
+
+        if n_remaining == 3:
+            val_counts_list = [sum([1 for i in deck_values if i == val]) for val in range(13)]
+            for val in ch_values:
+                val_counts_list[val] = 0
+
+            extra_pair_odds_list = [val * (val - 1) * (sum([1 for x in deck_values if x not in ch_values and x != val]))
+                                    / (deck_n * (deck_n - 1) * (deck_n - 2)) for val in val_counts_list]
+
+            extra_toak_odds_list = [val * (val - 1) * (val - 2)
+                                    / (deck_n * (deck_n - 1) * (deck_n - 2)) for val in val_counts_list]
+
+            extra_two_unrelated_odds = sum([val * (sum([1 for x in deck_values if x not in ch_values]) - val)
+                                            for val in val_counts_list])  / ((deck_n - 1) * (deck_n - 2))
+
+            if ch_mode_count == 2:
+                # tp odds
+                for val in range(13):
+                    if val not in ch_values:
+                        if val > ch_mode_val:
+                            probas_list[val][2] = extra_pair_odds_list[val]
+                        else:
+                            probas_list[ch_mode_val][2] += extra_pair_odds_list[val]
+
+                # toak odds
+                probas_list[ch_mode_val][3] = 3 * (sum([1 for val in deck_values if val == ch_mode_val]) / deck_n) * extra_two_unrelated_odds
+
+                # fh odds
+                for val in range(13):
+                    if val not in ch_values:
+                        probas_list[val][6] = extra_toak_odds_list[val]
+
+                probas_list[ch_mode_val][6] = 3 * (sum([1 for val in deck_values if val == ch_mode_val]) / deck_n) * sum(extra_pair_odds_list)
+
+                # foak odds
+                probas_list[ch_mode_val][7] = 3 * (sum([1 for val in deck_values if val == ch_mode_val]) * (sum([1 for val in deck_values if val == ch_mode_val]) - 1) *
+                     sum([1 for x in deck_values if x not in ch_values])) / (deck_n * (deck_n - 1) * (deck_n - 2))
+
+                # current pair only odds
+                probas_list[ch_mode_val][1] = 1 - sum([sum(l) for l in probas_list])
+                return probas_list
+
+            # new HC odds
+            tot_nr_cards = sum([1 for x in deck_values if x not in ch_values])
+            over_cards = [i for i in range(12,-1,-1) if i > max_ch_values]
+            cumulative_overs = 0
+            for i in range(len(over_cards)):
+                val = over_cards[i]
+                n_overs = sum([1 for i in deck_values if i == val])
+                probas_list[val][0] = 2 * (n_overs / deck_n) * ((tot_nr_cards - cumulative_overs) / (deck_n - 1)) * \
+                                      ((tot_nr_cards - cumulative_overs - 1) / (deck_n - 1))
+                cumulative_overs += n_overs
+
+            # straight odds
+            if 12 in ch_values and sum(ch_values < 4) == (4 - n_remaining):
+                ch_values[ch_values == 12] = -1
+                max_ch_values = max(ch_values)
+                min_ch_values = min(ch_values)
+            elif max_ch_values < 4:
+                deck_values[deck_values == 12] = -1
+
+            if max_ch_values - min_ch_values == 4:
+                missing_vals = [x for x in range(min_ch_values, max_ch_values) if x not in ch_values]
+                probas_list[max_ch_values][4] = 3 * 2 * (sum([1 for val in deck_values if val == missing_vals[0]]) / deck_n) * \
+                                                   (sum([1 for val in deck_values if val == missing_vals[1]]) / (deck_n - 1)) * \
+                                                   (sum([1 for val in deck_values if val == missing_vals[2]]) / (deck_n - 2))
+
+            elif max_ch_values - min_ch_values == 3:
+                missing_vals = [x for x in range(min_ch_values, max_ch_values) if x not in ch_values]
+                if min_ch_values > -1:
+                    probas_list[max_ch_values][4] = 3 * 2 * (sum([1 for val in deck_values if val == missing_vals[0]]) / deck_n) * \
+                                                   (sum([1 for val in deck_values if val == missing_vals[1]]) / (deck_n - 1)) * \
+                                                   (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / (deck_n - 2))
+                if max_ch_values < 12:
+                    probas_list[max_ch_values + 1][4] = 3 * 2 * (sum([1 for val in deck_values if val == missing_vals[0]]) / deck_n) * \
+                                                   (sum([1 for val in deck_values if val == missing_vals[1]]) / (deck_n - 1)) * \
+                                                   (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / (deck_n - 2))
+                    probas_list[max_ch_values + 1][0] = probas_list[max_ch_values + 1][0] - probas_list[max_ch_values + 1][4]
+
+            elif max_ch_values - min_ch_values == 2:
+                missing_val = [x for x in range(min_ch_values, max_ch_values) if x not in ch_values][0]
+
+                if min_ch_values > 0:
+                    probas_list[max_ch_values][4] = 3 * 2 * (sum([1 for val in deck_values if val == (min_ch_values - 2)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / (deck_n - 1)) * \
+                                                    (sum([1 for val in deck_values if val == missing_val]) / (deck_n - 2))
+                if max_ch_values < 12 and min_ch_values > -1:
+                    probas_list[max_ch_values + 1][4] = 2 * (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / (deck_n - 1)) * \
+                                                    (sum([1 for val in deck_values if val == missing_val]) / (deck_n - 2))
+                    probas_list[max_ch_values + 1][0] = probas_list[max_ch_values + 1][0] - probas_list[max_ch_values + 1][4]
+                if max_ch_values < 11:
+                    probas_list[max_ch_values + 2][4] = 2 * (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 2)]) / (deck_n - 1)) * \
+                                                    (sum([1 for val in deck_values if val == missing_val]) / (deck_n - 2))
+                    probas_list[max_ch_values + 2][0] = probas_list[max_ch_values + 2][0] - probas_list[max_ch_values + 2][4]
+
+            elif max_ch_values - min_ch_values == 1:
+                if min_ch_values > 1:
+                    probas_list[max_ch_values][4] = 3 * 2 * (sum([1 for val in deck_values if val == (min_ch_values - 3)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (min_ch_values - 2)]) / (deck_n - 1)) * \
+                                                    (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / (deck_n - 2))
+
+                if max_ch_values < 12 and min_ch_values > 0:
+                    probas_list[max_ch_values + 1][4] = 2 * (sum([1 for val in deck_values if val == (min_ch_values - 2)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / (deck_n - 1)) * \
+                                                    (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / (deck_n - 2))
+                    probas_list[max_ch_values + 1][0] = probas_list[max_ch_values + 1][0] - probas_list[max_ch_values + 1][4]
+
+                if max_ch_values < 11 and min_ch_values > -1:
+                    probas_list[max_ch_values + 2][4] = 2 * (sum([1 for val in deck_values if val == (min_ch_values - 1)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / (deck_n - 1)) * \
+                                                    (sum([1 for val in deck_values if val == (max_ch_values + 2)]) / (deck_n - 2))
+                    probas_list[max_ch_values + 2][0] = probas_list[max_ch_values + 2][0] - probas_list[max_ch_values + 2][4]
+
+                if max_ch_values < 10:
+                    probas_list[max_ch_values + 3][4] = 2 * (sum([1 for val in deck_values if val == (max_ch_values + 1)]) / deck_n) * \
+                                                       (sum([1 for val in deck_values if val == (max_ch_values + 2)]) / (deck_n - 1)) * \
+                                                        (sum([1 for val in deck_values if val == (max_ch_values + 3)]) / (deck_n - 2))
+                    probas_list[max_ch_values + 3][0] = probas_list[max_ch_values + 3][0] - probas_list[max_ch_values + 3][4]
+
+            if -1 in ch_values:
+                ch_values[ch_values == -1] = 12
+                max_ch_values = max(ch_values)
+                min_ch_values = min(ch_values)
+            elif max_ch_values < 4:
+                deck_values[deck_values == -1] = 12
+
+            # flush odds
+            if len(np.unique(ch_suits)) == 1:
+                n_tot_cards = sum([1 for val in deck_suits if val == ch_suits[0]])
+                over_cards = [i for i in range(12,-1,-1) if (i > max(current_hand)) and (i < 13 * (ch_suits[0] + 1))]
+                for i in range(len(over_cards)):
+                    val = over_cards[i] % 13
+                    probas_list[val][5] = 3 * (1 / deck_n) * \
+                                            (n_tot_cards - i - 1) / (deck_n - 1) * \
+                                            (n_tot_cards - i - 2) / (deck_n - 2)
+                    probas_list[val][0] = max(0, probas_list[val][0] - probas_list[val][5])
+
+                probas_list[max_ch_values][5] = ((n_tot_cards - len(over_cards)) / deck_n) * \
+                                                   (n_tot_cards - len(over_cards) - 1) / (deck_n - 1) * \
+                                                   (n_tot_cards - len(over_cards) - 2) / (deck_n - 2)
+
+            # pair odds
+            for val in range(13):
+                if val in ch_values:
+                    probas_list[val][1] = 3 * (sum([1 for i in deck_values if i == val]) / deck_n) * extra_two_unrelated_odds
+                else:
+                    probas_list[val][1] = extra_pair_odds_list[val]
+
+            # tp odds - 2 existing cards
+            probas_list[max_ch_values][2] = 3 * 2 * (sum([1 for val in deck_values if val == ch_values[0]]) / deck_n) * \
+                                            (sum([1 for val in deck_values if val == ch_values[1]]) / (deck_n - 1)) * \
+                                            (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 2))
+
+            # tp odds - 1 existing + extra pair
+            for ch_val in ch_values:
+                for extra_val in range(13):
+                    # we make up for 'extra_pair_vec' having already accounted for an extra unrelated card
+                    if extra_val in ch_values:
+                        continue
+                    if ch_val > extra_val:
+                        probas_list[ch_val][2] += 3 * extra_pair_odds_list[extra_val] * \
+                                                    (sum([1 for val in deck_values if val == ch_val])) / \
+                                                    (sum([1 for x in deck_values if x not in ch_values]))
+                    else:
+                        probas_list[extra_val][2] += 3 * extra_pair_odds_list[extra_val] * \
+                                                    (sum([1 for val in deck_values if val == ch_val])) / \
+                                                    (sum([1 for x in deck_values if x not in ch_values]))
+
+            # toak odds
+            for val in ch_values:
+                probas_list[val][3] = 3 * (sum([1 for i in deck_values if i == val]) / deck_n) * \
+                                        ((sum([1 for i in deck_values if i == val]) - 1) / (deck_n - 1)) * \
+                                        (sum([1 for x in deck_values if x not in ch_values]) / (deck_n - 2))
+
+            for val in range(13):
+                if val not in ch_values:
+                    probas_list[val][3] = extra_toak_odds_list[val]
+
+            # fh odds
+            probas_list[ch_values[0]][6] = 3 * (sum([1 for val in deck_values if val == ch_values[0]]) / deck_n) * \
+                                             ((sum([1 for val in deck_values if val == ch_values[0]]) - 1) / (deck_n - 1)) * \
+                                             ((sum([1 for val in deck_values if val == ch_values[1]])) / (deck_n - 2))
+
+            probas_list[ch_values[1]][6] = 3 * (sum([1 for val in deck_values if val == ch_values[1]]) / deck_n) * \
+                                             ((sum([1 for val in deck_values if val == ch_values[1]]) - 1) / (deck_n - 1)) * \
+                                             ((sum([1 for val in deck_values if val == ch_values[0]])) / (deck_n - 2))
+            # foak odds
+            for val in ch_values:
+                probas_list[val][7] = (sum([1 for i in deck_values if i == val]) / deck_n) * \
+                                        ((sum([1 for i in deck_values if i == val]) - 1) / (deck_n - 1)) * \
+                                        ((sum([1 for i in deck_values if i == val]) - 2) / (deck_n - 2))
+
+            # existing HC odds
+            probas_list[max_ch_values][0] = 1 - sum([sum(l) for l in probas_list])
+            return probas_list
 
     def calc_hand_win_proba(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
         if sum(cpu_hand == -1) == 0:

@@ -93,12 +93,12 @@ def calculate_winner(game_board):
     return winner, finalLabels, handCode
 
 
-nmlp0 = NonMlPlayer(proba_method="extended")
-nmlp1 = NonMlPlayer(proba_method="none")  # RandomPlayer()
+nmlp0 = NonMlPlayer(proba_method="none")
+nmlp1 = RandomPlayer()
 player_0_hand_count = [0] * 9
 player_1_hand_count = [0] * 9
 score = [0, 0]
-n_games = 500
+n_games = 100
 player_game_hands_data, random_game_hands_data = {}, {}
 
 for game_ind in tqdm(range(n_games)):
