@@ -93,12 +93,13 @@ def calculate_winner(game_board):
     return winner, finalLabels, handCode
 
 
-nmlp0 = NonMlPlayer(proba_method="none")
-nmlp1 = RandomPlayer()
+nmlp0 = NonMlPlayer(proba_method="extended")
+nmlp1 = NonMlPlayer(proba_method="none")
+# nmlp1 = RandomPlayer()
 player_0_hand_count = [0] * 9
 player_1_hand_count = [0] * 9
 score = [0, 0]
-n_games = 100
+n_games = 1000
 player_game_hands_data, random_game_hands_data = {}, {}
 
 for game_ind in tqdm(range(n_games)):
@@ -136,26 +137,34 @@ for game_ind in tqdm(range(n_games)):
         player_game_hands_data[game_ind].append(player_hands[0][i][0])
         random_game_hands_data[game_ind].append(player_hands[1][i][0])
 
-# checking proba correctness
+# creating proba calibration model
 if False:
     from catboost import CatBoostClassifier
     import numpy as np
     tqdm.pandas()
 
     probas_df, decs_df = nmlp0.get_data_as_dfs()
+    # opp_probas_df, opp_decs_df = nmlp1.get_data_as_dfs()
     probas_df["hand_ind"] = [i//3 for i in range(15)] * (n_games * 12)
     probas_df["proba_type"] = ["reg_cpu", "dec_cpu", "opp"] * (n_games * 12 * 5)
     probas_df["level"] = probas_df["decision_id"] // 4 + 2
+    probas_df.columns = ["hand_type_" + str(i) for i in range(13 * 9)] + list(probas_df.columns[117:])
+    data_path = r"C:\Users\omri_\Documents\five_o_data/"
+    probas_df.to_parquet(data_path + "20k_games_probas_df.parq")
+
+    # restarting console and reloading - to deal with memory issues
+    data_path = r"C:\Users\omri_\Documents\five_o_data/"
+    probas_df = pd.read_parquet(data_path + "20k_games_probas_df.parq")
+    cpu_df = probas_df[probas_df["proba_type"] == "reg_cpu"]
+    del probas_df
+    cpu_df = pd.melt(cpu_df, id_vars=cpu_df.columns[117:].to_list(), value_vars=cpu_df.columns[:117].to_list(),
+                   var_name='hand_type', value_name='proba')
+    cpu_df['y'] = cpu_df['cpu_res'] == cpu_df['hand_type']
+    x_mat = cpu_df[['level', 'proba', 'hand_type']]
 
     player_game_hands_df = pd.DataFrame(list(player_game_hands_data.values()))
     random_game_hands_df = pd.DataFrame(list(random_game_hands_data.values()))
     probas_df["cpu_res"] = probas_df.progress_apply(lambda row: player_game_hands_df.loc[row["game_id"]][row["hand_ind"]], axis=1)
-
-    temp = probas_df[probas_df["proba_type"] == "reg_cpu"]
-    temp = pd.melt(temp, id_vars=temp.columns[9:].to_list(), value_vars=temp.columns[:9].to_list(),
-                   var_name='hand_type', value_name='proba')
-    temp['y'] = temp['cpu_res'] == temp['hand_type']
-    x_mat = temp[['level', 'proba', 'hand_type']]
 
     cat_features = ['level', 'hand_type']
     cb = CatBoostClassifier(n_estimators=500, learning_rate=0.05, max_depth=2, subsample=0.6,
@@ -181,4 +190,16 @@ if False:
 
     df/(n_games * 5)
     score[0]/sum(score)
+    """
+                     p0      p1
+    High Card        0.1374  0.4998
+    Pair             0.5110  0.4210
+    Two Pair         0.2104  0.0514
+    Three of a Kind  0.1142  0.0212
+    Straight         0.0012  0.0034
+    Flush            0.0072  0.0016
+    Full House       0.0152  0.0014
+    Four of a Kind   0.0032  0.0002
+    Straight Flush   0.0002  0.0000
+    """
 
