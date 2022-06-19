@@ -93,14 +93,14 @@ def calculate_winner(game_board):
     return winner, finalLabels, handCode
 
 
-nmlp0 = NonMlPlayer(proba_method="extended")
-nmlp1 = NonMlPlayer(proba_method="none")
+nmlp0 = NonMlPlayer(proba_method="ml_probas")
+nmlp1 = NonMlPlayer()
 # nmlp1 = RandomPlayer()
 player_0_hand_count = [0] * 9
 player_1_hand_count = [0] * 9
 score = [0, 0]
-n_games = 1000
-player_game_hands_data, random_game_hands_data = {}, {}
+n_games = 500
+player_0_game_hands_data, player_1_game_hands_data = {}, {}
 
 for game_ind in tqdm(range(n_games)):
     deck = list(range(52))
@@ -130,12 +130,12 @@ for game_ind in tqdm(range(n_games)):
     hand_winner, _, player_hands = calculate_winner(board)
 
     score[int(sum(hand_winner) >= 3)] += 1
-    player_game_hands_data[game_ind], random_game_hands_data[game_ind] = [], []
+    player_0_game_hands_data[game_ind], player_1_game_hands_data[game_ind] = [], []
     for i in range(5):
         player_0_hand_count[player_hands[0][i][0]] += 1
         player_1_hand_count[player_hands[1][i][0]] += 1
-        player_game_hands_data[game_ind].append(player_hands[0][i][0])
-        random_game_hands_data[game_ind].append(player_hands[1][i][0])
+        player_0_game_hands_data[game_ind].append(player_hands[0][i][0])
+        player_1_game_hands_data[game_ind].append(player_hands[1][i][0])
 
 # creating proba calibration model
 if False:
@@ -144,62 +144,94 @@ if False:
     tqdm.pandas()
 
     probas_df, decs_df = nmlp0.get_data_as_dfs()
-    # opp_probas_df, opp_decs_df = nmlp1.get_data_as_dfs()
-    probas_df["hand_ind"] = [i//3 for i in range(15)] * (n_games * 12)
-    probas_df["proba_type"] = ["reg_cpu", "dec_cpu", "opp"] * (n_games * 12 * 5)
-    probas_df["level"] = probas_df["decision_id"] // 4 + 2
-    probas_df.columns = ["hand_type_" + str(i) for i in range(13 * 9)] + list(probas_df.columns[117:])
+    opp_probas_df, opp_decs_df = nmlp1.get_data_as_dfs()
+    for i in range(9):
+        probas_df["hand_proba_"+str(i)] = probas_df.iloc[:, (13 * i):(13 * (i + 1))].sum(axis=1)
+        opp_probas_df["hand_proba_"+str(i)] = opp_probas_df.iloc[:, (13 * i):(13 * (i + 1))].sum(axis=1)
+    probas_df = probas_df.iloc[:, 117:]
+    opp_probas_df = opp_probas_df.iloc[:, 117:]
+
+    probas_df["player"] = "cpu_0"
+    opp_probas_df["player"] = "cpu_1"
+    probas_df = pd.concat([probas_df, opp_probas_df])
+
+    probas_df["hand_ind"] = [i for i in range(5)] * (n_games * 12 * 2)
+    cpu_game_hands_df = pd.DataFrame(list(player_0_game_hands_data.values()))
+    opp_game_hands_df = pd.DataFrame(list(player_1_game_hands_data.values()))
+    probas_df['hand_res'] = cpu_game_hands_df.loc[cpu_game_hands_df.index.repeat(12)].to_numpy().flatten().tolist() + \
+                            opp_game_hands_df.loc[opp_game_hands_df.index.repeat(12)].to_numpy().flatten().tolist()
+
+    probas_df = probas_df.loc[probas_df.index.repeat(9)]
+    repd_probas_df = pd.DataFrame(np.repeat(probas_df.values, 9, axis=0), columns=probas_df.columns)
+    repd_probas_df['hand_type'] = [i for i in range(9)] * int(repd_probas_df.shape[0]/9)
+    repd_probas_df['y'] = repd_probas_df['hand_type'] == repd_probas_df['hand_res']
+
+    train_inds = pd.Series(range(repd_probas_df.shape[0])).sample(frac=0.25).sort_values()
+    test_inds = pd.Series([i for i in range(repd_probas_df.shape[0]) if i not in train_inds])
+    x_cols = ['decision_id', 'hand_proba_0', 'hand_proba_1', 'hand_proba_2',
+              'hand_proba_3', 'hand_proba_4', 'hand_proba_5', 'hand_proba_6',
+              'hand_proba_7', 'hand_proba_8', 'hand_type']
+
+    train_x, train_y = repd_probas_df.loc[train_inds, x_cols], repd_probas_df.loc[train_inds, 'y']
+    test_x, test_y = repd_probas_df.loc[test_inds, x_cols], repd_probas_df.loc[test_inds, 'y']
+
+    cat_features = ['decision_id', 'hand_type']
+    cb = CatBoostClassifier(n_estimators=1000, learning_rate=0.05, max_depth=5, subsample=0.6,
+                            one_hot_max_size=15, cat_features=cat_features)
+    cb.fit(train_x, train_y)
+    test_x['preds'] = cb.predict_proba(test_x)[:, 1]
+
+    # looking at specifics
+    a = test_x.loc[test_x['hand_type'] == 2, ['decision_id','hand_proba_2', 'preds']]
+
+    # checking calibration on test
+    num_of_bins = 50
+    bin_assignments_cb = (test_x['preds'] * num_of_bins) // 1
+    expected_succ_rates = np.round(np.linspace(1 / (2 * num_of_bins), 1 - 1 / (2 * num_of_bins), num_of_bins), 3)
+    acutal_succ_rates_cb = []
+
+    for val in range(num_of_bins):
+        acutal_succ_rates_cb.append(test_y[bin_assignments_cb == val].mean())
+    succ_rates_cb = pd.Series(acutal_succ_rates_cb, index=expected_succ_rates)
+
+    # saving model
+    import pickle
     data_path = r"C:\Users\omri_\Documents\five_o_data/"
-    probas_df.to_parquet(data_path + "20k_games_probas_df.parq")
+    pkl_dict = {"model": cb, "col_order": x_cols}
+    with open(data_path + "cb_model.pkl", 'wb') as file:
+        pickle.dump(pkl_dict, file)
 
-    # restarting console and reloading - to deal with memory issues
-    data_path = r"C:\Users\omri_\Documents\five_o_data/"
-    probas_df = pd.read_parquet(data_path + "20k_games_probas_df.parq")
-    cpu_df = probas_df[probas_df["proba_type"] == "reg_cpu"]
-    del probas_df
-    cpu_df = pd.melt(cpu_df, id_vars=cpu_df.columns[117:].to_list(), value_vars=cpu_df.columns[:117].to_list(),
-                   var_name='hand_type', value_name='proba')
-    cpu_df['y'] = cpu_df['cpu_res'] == cpu_df['hand_type']
-    x_mat = cpu_df[['level', 'proba', 'hand_type']]
 
-    player_game_hands_df = pd.DataFrame(list(player_game_hands_data.values()))
-    random_game_hands_df = pd.DataFrame(list(random_game_hands_data.values()))
-    probas_df["cpu_res"] = probas_df.progress_apply(lambda row: player_game_hands_df.loc[row["game_id"]][row["hand_ind"]], axis=1)
-
-    cat_features = ['level', 'hand_type']
-    cb = CatBoostClassifier(n_estimators=500, learning_rate=0.05, max_depth=2, subsample=0.6,
-                            one_hot_max_size=10, cat_features=cat_features)
-    cb.fit(x_mat, temp['y'])
-    temp['preds'] = cb.predict_proba(x_mat)[:, 1]
-
-    a = list(np.concatenate([np.linspace(0.0001, 0.001, 10), np.linspace(0.002, 0.01, 9), np.linspace(0.02, 0.99, 98)]))
-    a = a * (9 * 3)
-    b = [item for sublist in [[j for i in range(int(len(a)/9))] for j in range(9)] for item in sublist]
-    c = [item for sublist in [[j for i in range(int(len(a)/27))] for j in range(2, 5)] for item in sublist] * 9
-
-    proba_conv_df = pd.DataFrame(zip(c, a, b), columns=x_mat.columns)
-    proba_conv_df["convd"] = cb.predict_proba(proba_conv_df)[:, 1]
-    proba_conv_df = proba_conv_df.sort_values(["hand_type", "level", "proba"], ascending=True)
-    proba_conv_df.to_parquet("proba_conv_df.parq")
+    # # creating conversion table
+    # a = list(np.concatenate([np.linspace(0.0001, 0.001, 10), np.linspace(0.002, 0.01, 9), np.linspace(0.02, 0.99, 98)]))
+    # a = a * (9 * 3)
+    # b = [item for sublist in [[j for i in range(int(len(a)/9))] for j in range(9)] for item in sublist]
+    # c = [item for sublist in [[j for i in range(int(len(a)/27))] for j in range(2, 5)] for item in sublist] * 9
+    #
+    # proba_conv_df = pd.DataFrame(zip(c, a, b), columns=x_mat.columns)
+    # proba_conv_df["convd"] = lr.predict_proba(proba_conv_df)[:, 1]
+    # proba_conv_df = proba_conv_df.sort_values(["hand_type", "level", "proba"], ascending=True)
+    # proba_conv_df.to_parquet("proba_conv_df.parq")
 
 # checking hand dist
 if False:
     df = pd.DataFrame(zip(player_0_hand_count, player_1_hand_count), columns=["p0", "p1"],
                       index=["High Card", "Pair", "Two Pair", "Three of a Kind", "Straight", "Flush",
                              "Full House", "Four of a Kind", "Straight Flush"])
-
     df/(n_games * 5)
+
     score[0]/sum(score)
+    score[0]/sum(score) + np.array([-1,1]) * 2 *((score[0]/sum(score))*(score[1]/sum(score))/n_games)**0.5
     """
-                     p0      p1
-    High Card        0.1374  0.4998
-    Pair             0.5110  0.4210
-    Two Pair         0.2104  0.0514
-    Three of a Kind  0.1142  0.0212
-    Straight         0.0012  0.0034
-    Flush            0.0072  0.0016
-    Full House       0.0152  0.0014
-    Four of a Kind   0.0032  0.0002
-    Straight Flush   0.0002  0.0000
+                           p0        p1
+    High Card        0.136333  0.095267
+    Pair             0.473133  0.455867
+    Two Pair         0.221333  0.237667
+    Three of a Kind  0.121200  0.144333
+    Straight         0.015867  0.015067
+    Flush            0.009800  0.016067
+    Full House       0.019467  0.031200
+    Four of a Kind   0.002800  0.004333
+    Straight Flush   0.000067  0.000200
     """
 

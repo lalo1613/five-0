@@ -237,7 +237,7 @@ run = True
 score = [0, 0]
 speedModifier = 1 / 5  # smaller means faster
 cpuPlayer = True
-nmlp0 = NonMlPlayer(proba_method="extended")
+nmlp0 = NonMlPlayer(proba_method="ml_probas")
 loadImages()
 newGame()
 
