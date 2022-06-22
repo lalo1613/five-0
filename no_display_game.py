@@ -1,6 +1,6 @@
 import random
 import pandas as pd
-from non_ml_player import NonMlPlayer
+from cpu_player import CpuPlayer
 from random_player import RandomPlayer
 from tqdm import tqdm
 
@@ -93,9 +93,9 @@ def calculate_winner(game_board):
     return winner, finalLabels, handCode
 
 
-nmlp0 = NonMlPlayer(proba_method="ml_probas")
-nmlp1 = NonMlPlayer()
-# nmlp1 = RandomPlayer()
+nmlp0 = CpuPlayer(save_data=False)
+# nmlp1 = NonMlPlayer(save_data=False)
+nmlp1 = RandomPlayer()
 player_0_hand_count = [0] * 9
 player_1_hand_count = [0] * 9
 score = [0, 0]
@@ -128,14 +128,17 @@ for game_ind in tqdm(range(n_games)):
         turn = 1 - turn
 
     hand_winner, _, player_hands = calculate_winner(board)
-
     score[int(sum(hand_winner) >= 3)] += 1
-    player_0_game_hands_data[game_ind], player_1_game_hands_data[game_ind] = [], []
-    for i in range(5):
-        player_0_hand_count[player_hands[0][i][0]] += 1
-        player_1_hand_count[player_hands[1][i][0]] += 1
-        player_0_game_hands_data[game_ind].append(player_hands[0][i][0])
-        player_1_game_hands_data[game_ind].append(player_hands[1][i][0])
+
+    if game_ind % 10 == 9:
+        print(score)
+
+    # player_0_game_hands_data[game_ind], player_1_game_hands_data[game_ind] = [], []
+    # for i in range(5):
+    #     player_0_hand_count[player_hands[0][i][0]] += 1
+    #     player_1_hand_count[player_hands[1][i][0]] += 1
+    #     player_0_game_hands_data[game_ind].append(player_hands[0][i][0])
+    #     player_1_game_hands_data[game_ind].append(player_hands[1][i][0])
 
 # creating proba calibration model
 if False:

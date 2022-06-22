@@ -1,5 +1,5 @@
-import pygame, random, os
-from non_ml_player import NonMlPlayer
+import pygame, random, os, copy
+from cpu_player import CpuPlayer
 
 pygame.init()
 pygame.font.init()
@@ -65,10 +65,6 @@ def redrawBoard():
         win.blit(s2, (180, 308))
     else:
         win.blit(s2, (190, 308))
-    # pygame.draw.rect(win, (150, 200, 150), (870, 510, 100, 60))
-    # pygame.draw.rect(win, (0, 0, 0), (870, 510, 100, 60), 3)
-    # button = textFont.render("Restart", False, (0, 0, 0))
-    # win.blit(button, (882, 522))
 
 def drawEndBoard(winner, labels):
     win.fill(backcolor)
@@ -233,11 +229,12 @@ backcolor = (0, 120, 20)
 win.fill(backcolor)
 pygame.display.set_caption("Five-O Poker")
 
+# game settings
 run = True
 score = [0, 0]
 speedModifier = 1 / 5  # smaller means faster
 cpuPlayer = True
-nmlp0 = NonMlPlayer(proba_method="ml_probas")
+nmlp0 = CpuPlayer()
 loadImages()
 newGame()
 
@@ -283,21 +280,32 @@ while run:
 
     # is the cpu on?
     if (cpuPlayer is True) and ((len(deck) - 2) % 10 > 1) and (turn == 0) and (len(deck) > 2):
+        pygame.event.set_blocked(None)
         if len(deck) % 10 == 1:
             level += 1
         pygame.display.update()
         pygame.time.delay(round(200 * speedModifier))
-        choice = nmlp0.get_choice(level, turn, player, deck, curCard)
+        if level < 4:
+            choice = nmlp0.get_choice(level, turn, player, deck, curCard)
+        else:
+            masked_deck = [val for val in range(52) if val in deck or val in player[1 - turn][4]]
+            masked_player = copy.deepcopy(player)
+            masked_player[1 - turn][4] = [-1] * 5
+            choice = nmlp0.get_choice(level, turn, masked_player, masked_deck, curCard)
         moveCardTo(turn, level, choice)
         player[turn][level][choice] = curCard
         curCard = -1
         turn = 1 - turn
+        pygame.event.set_allowed(None)
 
-    # get player decision
+    # main loop - getting and treating human player decision
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             run = False
         if not gameOver:
+            # no events allowed while other actions occur
+            pygame.event.set_blocked(None)
+
             # placing cards based on mouse click
             if event.type == pygame.MOUSEBUTTONUP and ((len(deck) - 2) % 10 > 1) and (cpuPlayer * (1 - turn) != 1):
                 pos = pygame.mouse.get_pos()
@@ -307,10 +315,11 @@ while run:
                     level = 4 - ((len(deck) - 2) // 10)
                     if player[turn][level][choice] == -1:
                         moveCardTo(turn, level, choice)
-                        player[turn][level][
-                            choice] = curCard  # make sure to do the addition of the card after the animation
+                        player[turn][level][choice] = curCard  # make sure to do the addition of the card after the animation
                         curCard = -1
                         turn = 1 - turn
+                        redrawBoard()
+
             # placing cards based on use of 1-5 keys
             if event.type == pygame.KEYDOWN and ((len(deck) - 2) % 10 > 1) and (cpuPlayer * (1 - turn) != 1):
                 if event.key == pygame.K_1:
@@ -322,6 +331,8 @@ while run:
                             choice] = curCard  # make sure to do the addition of the card after the animation
                         curCard = -1
                         turn = 1 - turn
+                        redrawBoard()
+
                 if event.key == pygame.K_2:
                     choice = 1
                     level = 4 - ((len(deck) - 2) // 10)
@@ -331,6 +342,8 @@ while run:
                             choice] = curCard  # make sure to do the addition of the card after the animation
                         curCard = -1
                         turn = 1 - turn
+                        redrawBoard()
+
                 if event.key == pygame.K_3:
                     choice = 2
                     level = 4 - ((len(deck) - 2) // 10)
@@ -340,6 +353,8 @@ while run:
                             choice] = curCard  # make sure to do the addition of the card after the animation
                         curCard = -1
                         turn = 1 - turn
+                        redrawBoard()
+
                 if event.key == pygame.K_4:
                     choice = 3
                     level = 4 - ((len(deck) - 2) // 10)
@@ -349,6 +364,8 @@ while run:
                             choice] = curCard  # make sure to do the addition of the card after the animation
                         curCard = -1
                         turn = 1 - turn
+                        redrawBoard()
+
                 if event.key == pygame.K_5:
                     choice = 4
                     level = 4 - ((len(deck) - 2) // 10)
@@ -358,6 +375,10 @@ while run:
                             choice] = curCard  # make sure to do the addition of the card after the animation
                         curCard = -1
                         turn = 1 - turn
+                        redrawBoard()
+
+            # re-enabling events once the existing event has been dealt with
+            pygame.event.set_allowed(None)
         else:
             if event.type == pygame.MOUSEBUTTONUP:
                 pos = pygame.mouse.get_pos()

@@ -3,16 +3,67 @@ import pandas as pd
 import pickle
 from poisson_binomial import PoissonBinomial
 from scipy.stats import mode
-from math import log10, ceil
-from time import time
 
 
-class NonMlPlayer():
+class CpuPlayer():
     """
-    Things left to work on:
+    Approach:
+    The approach taken so far relies only on probability (and a few heuristics).
 
+    The decision making process is as follows:
+    * For each column,
+        calculate the probability of getting each of the 9 possible hand types (High Card, Pair, ..., Straight Flush),
+        and the probability for all potential high cards within that,
+        given the columns' current cards, and assuming random card placements.
+
+    * Then, for all columns in which the newly drawn card can be placed,
+        calculate those same probabilities described above (hand types and their high cards),
+        but with the newly drawn card added to the column.
+
+    * Calculate the hand type probabilities for the opponent's columns as well.
+
+    * Now that we know what the possibilities are for our columns and their counterparts,
+        we can calcuate the probability of beating the opponent in each column.
+        Do that with both the probabilites calculated with the newly drawn card (if possible),
+        and the probabilities without them.
+        In other words, calculate the probability of winning each column if you place the candidate card there,
+        and if you don't.
+
+    * Finally, calculate the probability of winning the game given for each of the drawn card's potential destinations.
+        Choose the column that maximizes that.
+
+    -------------------------------------------------------------------------------------------------------------------
+    Funcs (3 main ones):
+
+    * get_choice - orchestrates the whole thing.
+
+    * calc_hand_probas - given a column's cards and the current deck, calculates the hand-type/high-card combos' probas.
+
+    * calc_hand_win_proba - given the hand-type/high-card combos' probas for both the cpu and the opponent,
+                            calculates the probability of beating the opponent in this column.
+
+    -------------------------------------------------------------------------------------------------------------------
+
+    Issues remaining:
+    * Hand independence assumption.
+
+    * Opp hidden cards in last round are not used, although they can be informative.
+
+    * Currently the first round is placed based on strongest potential column given the drawn card,
+        regardless of the opponents hand, as the code doesn't yet support hand probas for a column with a single card.
+
+    * Tiebreaks within same hand type and same high card val are not currently calculated, odds are split to 50-50.
+
+    * In final round, the transition between 4th and 5th card win odds is weird when using the exact raw opp probas.
+        Since they are raw, it's currently a trade off between having them solve the tiebreak issue or the rawness issue.
+        The rawness fix is eaiser but the tie-break one will yield value everywhere so I suggest we wait for that one,
+        and then the exact probas code can actually be discarded.
+
+    * Straight flush probability not calculated until last round.
     """
-    def __init__(self, save_data=True, proba_method="reg", data_path=r"C:\Users\omri_\Documents\five_o_data/"):
+
+    def __init__(self, save_data=False, proba_method="heuristic",
+                 fifth_card_exact_calc=False, data_path=r"C:\Users\omri_\Documents\five_o_data/"):
         self.save_data = save_data
         self.proba_method = proba_method
         if proba_method == "ml_probas":
@@ -23,66 +74,75 @@ class NonMlPlayer():
         self.decision_id = 0
         self.probas_data = {}
         self.decisions_data = {}
+        self.fifth_card_exact_calc = fifth_card_exact_calc
 
     def get_choice(self, level, turn, player, deck, pot_card):
-            options = [x for x in range(5) if player[turn][level][x] == -1]
-            temp_player = np.array(player)
-            cpu_hands = [temp_player[turn, :, i].copy() for i in range(5)]
-            opp_hands = [temp_player[1 - turn, :, i].copy() for i in range(5)]
-            for i in range(5):
-                opp_hands[i][4] = -1
+        # getting allowed decision options
+        options = [x for x in range(5) if player[turn][level][x] == -1]
 
-            deck_left = np.concatenate([deck, temp_player[1 - turn][4][temp_player[1 - turn][4] != -1]])
+        # turning lists to np arrays, extracting player hands
+        temp_player = np.array(player)
+        deck_left = np.array(deck)
+        cpu_hands = [temp_player[turn, :, i].copy() for i in range(5)]
+        opp_hands = [temp_player[1 - turn, :, i].copy() for i in range(5)]
 
-            # first card - currently placed heuristically in strongest
-            if level < 2:
-                cpu_decision_probas_list = [[-1] * 9*13] * 5
-                for i in range(5):
-                    vec = cpu_hands[i].copy()
-                    if i in options:
-                        vec[level] = pot_card
-                        cpu_decision_probas_list[i] = self.calc_hand_probas(vec, deck_left)
-
-                expected_val = [sum([l[x] * (x//13)**1.5 for x in range(9*13)]) for l in cpu_decision_probas_list]
-                decision = int(np.argmax(expected_val))
-                return decision
-
-            cpu_probas_list = [self.calc_hand_probas(cpu_hands[i], deck_left) for i in range(5)]
-            opp_probas_list = [self.calc_hand_probas(opp_hands[i], deck_left) for i in range(5)]
-
+        # first card - currently placed heuristically in strongest potential column
+        if level < 2:
             cpu_decision_probas_list = [[-1] * 9*13] * 5
-            as_is_win_probas, decision_win_probas = [-1] * 5, [-1] * 5
             for i in range(5):
                 vec = cpu_hands[i].copy()
-                opp_vec = opp_hands[i].copy()
-                as_is_win_probas[i] = self.calc_hand_win_proba(cpu_probas_list[i], opp_probas_list[i],
-                                                               vec, opp_vec, deck_left)
                 if i in options:
                     vec[level] = pot_card
                     cpu_decision_probas_list[i] = self.calc_hand_probas(vec, deck_left)
-                    decision_win_probas[i] = self.calc_hand_win_proba(cpu_decision_probas_list[i], opp_probas_list[i],
-                                                                      vec, opp_vec, deck_left)
-            dec_ovr_win_probas = [-1] * 5
-            for i in options:
-                post_dec_vec = as_is_win_probas.copy()
-                post_dec_vec[i] = decision_win_probas[i]
-                pb = PoissonBinomial(post_dec_vec)
-                dec_ovr_win_probas[i] = pb.x_or_more(3)
 
-            decision = int(np.argmax(dec_ovr_win_probas))
-            [sum(opp_probas_list[1][(i*13):((i+1)*13)]) for i in range(9)]
-            if self.save_data:
-                # returning the card so that we can correctly calc probas
-                probas_data = pd.DataFrame([self.calc_hand_probas(cpu_hands[i], np.concatenate([deck_left, [pot_card]])) for i in range(5)])
-                # interwined_probas_list = [item for trio in zip(cpu_probas_list, cpu_decision_probas_list, opp_probas_list) for item in trio]
-                # probas_data = pd.DataFrame(interwined_probas_list, index=[["cpu", "cpu+card", "opp"][i % 3] + str(i//3) for i in range(15)])
-                self.log_data(probas_data, dec_ovr_win_probas)
-
+            expected_val = [sum([l[x] * (x//13)**1.5 for x in range(9*13)]) for l in cpu_decision_probas_list]
+            decision = int(np.argmax(expected_val))
             return decision
+
+        # calculating hand probabilities for all 10 existing columns
+        cpu_probas_list = [self.calc_hand_probas(cpu_hands[i], deck_left) for i in range(5)]
+        opp_probas_list = [self.calc_hand_probas(opp_hands[i], deck_left) for i in range(5)]
+
+        # calculate probability of winning each hand as is,
+        # and probability of winning each possible option hand if the card is placed there.
+        cpu_decision_probas_list = [[-1] * 9*13] * 5
+        as_is_hand_win_probas, decision_hand_win_probas = [-1] * 5, [-1] * 5
+        for i in range(5):
+            vec = cpu_hands[i].copy()
+            opp_vec = opp_hands[i].copy()
+            as_is_hand_win_probas[i] = self.calc_hand_win_proba(cpu_probas_list[i], opp_probas_list[i],
+                                                                vec, opp_vec, deck_left)
+            if i in options:
+                vec[level] = pot_card
+                cpu_decision_probas_list[i] = self.calc_hand_probas(vec, deck_left)
+                decision_hand_win_probas[i] = self.calc_hand_win_proba(cpu_decision_probas_list[i], opp_probas_list[i],
+                                                                       vec, opp_vec, deck_left)
+
+        # look at the probability of winning the game with each decision made
+        dec_game_win_probas = [-1] * 5
+        for i in options:
+            post_dec_vec = as_is_hand_win_probas.copy()
+            post_dec_vec[i] = decision_hand_win_probas[i]
+            pb = PoissonBinomial(post_dec_vec)
+            dec_game_win_probas[i] = pb.x_or_more(3)
+
+        # choose the option that maximized game win proba
+        decision = int(np.argmax(dec_game_win_probas))
+
+        # should the initial probabilites be saved?
+        if self.save_data:
+            # returning the drawn card to the deck so that we can correctly calc probas
+            probas_data = pd.DataFrame([self.calc_hand_probas(cpu_hands[i], np.concatenate([deck_left, [pot_card]])) for i in range(5)])
+            self.log_data(probas_data, dec_game_win_probas)
+
+        return decision
 
     def calc_hand_probas(self, current_hand, deck):
         if self.proba_method == "ml_probas":
             return self.calc_ml_probas([item for sub_l in self.calc_extended_random_hand_probas(current_hand, deck) for item in sub_l])
+        if self.proba_method == "heuristic":
+            return self.calc_heuristic_adj_probas([item for sub_l in self.calc_extended_random_hand_probas(current_hand, deck) for item in sub_l],
+                                                  sum(current_hand == -1))
         return [item for sub_l in self.calc_extended_random_hand_probas(current_hand, deck) for item in sub_l]
 
     def calc_extended_random_hand_probas(self, current_hand, deck):
@@ -198,7 +258,6 @@ class NonMlPlayer():
                 deck_values[deck_values == -1] = 12
                 probas_list[0][12] = probas_list[0][12] - probas_list[4][3]
 
-
             # flush odds
             if len(np.unique(ch_suits)) == 1:
                 n_tot_cards = sum([1 for val in deck_suits if val == ch_suits[0]])
@@ -208,7 +267,6 @@ class NonMlPlayer():
                     probas_list[5][val] = 1 / deck_n
                     probas_list[0][val] *= (sum([1 for i in deck_values if i == val]) - 1)/(sum([1 for i in deck_values if i == val]))
                 probas_list[5][max_ch_values] = (n_tot_cards - len(over_cards)) / deck_n
-                probas_list[0][max_ch_values] = probas_list[0][max_ch_values] - probas_list[5][max_ch_values]
 
             # pair odds
             for val in ch_values:
@@ -330,7 +388,6 @@ class NonMlPlayer():
 
                 probas_list[5][max_ch_values] = ((n_tot_cards - len(over_cards)) / deck_n) * \
                                                    (n_tot_cards - len(over_cards) - 1) / (deck_n - 1)
-                probas_list[0][max_ch_values] = probas_list[0][max_ch_values] - probas_list[5][max_ch_values]
 
             # pair odds
             for val in ch_values:
@@ -499,7 +556,6 @@ class NonMlPlayer():
                 probas_list[5][max_ch_values] = ((n_tot_cards - len(over_cards)) / deck_n) * \
                                                    (n_tot_cards - len(over_cards) - 1) / (deck_n - 1) * \
                                                    (n_tot_cards - len(over_cards) - 2) / (deck_n - 2)
-                probas_list[0][max_ch_values] = probas_list[0][max_ch_values] - probas_list[5][max_ch_values]
 
             # pair odds
             for val in range(13):
@@ -555,23 +611,6 @@ class NonMlPlayer():
             # existing HC odds
             probas_list[0][max_ch_values] = 1 - sum([sum(l) for l in probas_list])
             return probas_list
-        # if sum([sum([1 for val in l if val < -0.01]) for l in probas_list]) > 0:
-        #     a = pd.DataFrame(probas_list)
-        #     temp_deck = deck_values.copy()
-        #     temp_hand = list(ch_values.copy())
-        #     from tqdm import tqdm
-        #     l = []
-        #     inds = np.array(range(len(temp_deck)))
-        #     for i0 in tqdm(inds):
-        #         for i1 in np.delete(inds, i0):
-        #             l.append(temp_hand + [temp_deck[i0], temp_deck[i1]])
-        #     z = pd.DataFrame(l)
-        #     zz = z.nunique(axis=1)
-        #
-        #     b = pd.Series([sum(l) for l in probas_list])
-        #     sum(zz==5)/len(l), b[0] + b[4] + b[5]
-        #     sum(zz==4)/len(l), b[1]
-        #     sum(zz==3)/len(l), b[2] + b[3]
 
     def calc_ml_probas(self, p_vec):
         short_p_vec = [sum(p_vec[(i*13):((i+1)*13)]) for i in range(9)]
@@ -584,12 +623,34 @@ class NonMlPlayer():
         new_vec = np.array(new_vec)/sum(new_vec)
         return list(new_vec)
 
+    def calc_heuristic_adj_probas(self, p_vec, cards_left):
+        htd_adj = 1/3
+        future_turn_chances = 3
+        new_vec = np.array(p_vec).copy()
+        if sum(new_vec > 0) == 1:
+            return p_vec
+
+        turn_chances = 4 - (self.decision_id % 4) * int(cards_left == (3 - self.decision_id//4))
+        inds = np.flip(np.array(range(9*13))[new_vec > 0])
+        hand_types_desirability = np.cumsum(np.insert(new_vec, 0, 0))
+        hand_types_desirability = hand_types_desirability - htd_adj
+        for i in inds:
+            htd = hand_types_desirability[i]
+            if htd < 1/max(turn_chances, future_turn_chances):
+                break
+            per_turn_proba = (new_vec[i] ** (1 / cards_left))
+            curr_turn_proba = (1 - (1 - per_turn_proba) ** (turn_chances * htd)) if htd > 1/turn_chances else per_turn_proba
+            remaining_turns_proba = (1 - (1 - per_turn_proba) ** (future_turn_chances * htd)) if htd > 1/future_turn_chances else per_turn_proba
+            new_vec[i] = curr_turn_proba * (remaining_turns_proba**(cards_left - 1))
+            new_vec[:i] *= (1 - sum(new_vec[i:])) / sum(new_vec[:i])
+
+        return list(new_vec)
+
     def calc_hand_win_proba(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
         return self.calc_extended_hand_win_proba(cpu_probas, opp_probas, cpu_hand, opp_hand, deck)
 
     def calc_extended_hand_win_proba(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
-        # cpu_probas, opp_probas, cpu_hand, opp_hand, deck = cpu_decision_probas_list[3], opp_probas_list[3], vec, opp_vec, deck_left
-        if sum(cpu_hand == -1) == 0:
+        if self.fifth_card_exact_calc and (sum(cpu_hand == -1) == 0):
             win_count = 0
             for i in range(len(deck)):
                 poss_opp_hand = opp_hand.copy()
@@ -605,6 +666,81 @@ class NonMlPlayer():
         opp_cum_probas = np.cumsum(opp_probas)
         cpu_win_proba = sum([cpu_probas[i] * opp_cum_probas[i - 1] + 0.5 * cpu_probas[i] * opp_probas[i] for i in range(1, 9*13)])
         return cpu_win_proba
+
+    def calc_hand_tie_break_win_proba(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
+        tie_probas = np.array(cpu_probas) * np.array(opp_probas)
+        cpu_n_remaining = (cpu_hand >= 0)
+        opp_n_remaining = (opp_hand >= 0)
+
+        if cpu_n_remaining > 2 or opp_n_remaining > 2:
+            return 0.5 * sum(tie_probas)
+
+        rel_inds = np.where(tie_probas > 0)
+        cpu_ch_suits = cpu_hand // 13
+        cpu_ch_values = cpu_hand % 13
+        opp_ch_suits = opp_hand // 13
+        opp_ch_values = opp_hand % 13
+        deck_suits = deck // 13
+        deck_values = deck % 13
+        deck_n = len(deck)
+
+        for rel_ind in rel_inds:
+            if rel_ind // 13 == 1:
+                print("bla")
+
+            """        
+            HC:
+            over_cards_above_current_max (excluding Pair val, other hand vals)
+            loop over them and sum proba of getting each, with opp not getting it
+            
+            P:
+            remove 1 in n_remaining if not current pair
+            over_cards_above_current_max (excluding Pair val, other hand vals)
+            loop over them and sum proba of getting each, with opp not getting it
+            
+            
+            TP:
+            remove 2 in n_remaining if not current pair, 1 if currently only 1 pair
+    
+            straight:
+            always 0.5
+            
+            flush:
+            separate, suited
+            over_cards_above_current_max (excluding Pair val, other hand vals)
+            loop over them and sum proba of getting each, with opp not getting it
+            """
+
+    def rearrange_hand(self, hand):
+        hand_vals = np.array([val % 13 if val >= 0 else -1 for val in hand])
+        hand_vals = list(hand_vals[hand_vals >= 0])
+        hand_order = np.flip(np.argsort([i + (hand_vals.count(i) - 1) * 13 for i in hand_vals]))
+        rearrranged_hand = np.array(hand_vals)[hand_order]
+        return np.concatenate([rearrranged_hand, [-1] * (5 - len(hand_vals))])
+
+    def get_curr_leader(self, cpu_hand, opp_hand):
+        cpu_hand_vals = self.rearrange_hand(cpu_hand)
+        opp_hand_vals = self.rearrange_hand(opp_hand)
+        for i in range(5):
+            if cpu_hand_vals[i] > opp_hand_vals[i]:
+                return "cpu"
+            elif cpu_hand_vals[i] < opp_hand_vals[i]:
+                return "opp"
+        return "tie"
+
+    def log_data(self, probas_df, dec_win_probas_list):
+        probas_df["game_id"] = self.game_id
+        probas_df["decision_id"] = self.decision_id
+        self.probas_data[self.game_id * 12 + self.decision_id] = probas_df
+        self.decisions_data[self.game_id * 12 + self.decision_id] = dec_win_probas_list
+
+        self.decision_id += 1
+        if self.decision_id == 12:
+            self.decision_id = 0
+            self.game_id += 1
+
+    def get_data_as_dfs(self):
+        return pd.concat(list(self.probas_data.values())), pd.DataFrame.from_dict(self.decisions_data)
 
     def depreciated_short_calc_random_hand_probas(self, current_hand, deck):
         current_hand = current_hand[current_hand >= 0]
@@ -913,9 +1049,6 @@ class NonMlPlayer():
             return [high_card_odds, pair_odds, tp_odds, toak_odds, straight_odds, flush_odds, fh_odds, foak_odds, straight_odds * flush_odds]
 
     def depreciated_calc_extended_random_hand_probas(self, current_hand, deck):
-        """
-        current_hand, deck = cpu_hands[1].copy(), deck_left.copy()
-        """
         probas_df = pd.DataFrame([[0.0] * 9] * 13, index=range(13), columns=range(9))
         current_hand = current_hand[current_hand >= 0]
         ch_suits = current_hand // 13
@@ -1422,7 +1555,7 @@ class NonMlPlayer():
         cpu_win_proba = sum([cpu_probas[i] * opp_cum_probas[i - 1] for i in range(1, 9)]) + sum(tie_break_win_probas)
         return cpu_win_proba
 
-    def win_tie_probas(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
+    def depreciated_win_tie_probas(self, cpu_probas, opp_probas, cpu_hand, opp_hand, deck):
         res_vec = [0.5] * 9
         deck_values = np.array(deck) % 13
         deck_n = len(deck)
@@ -1489,34 +1622,3 @@ class NonMlPlayer():
         # if no chance of overcoming - 0
         # otherwise calc that chance
         return res_vec
-
-    def rearrange_hand(self, hand):
-        hand_vals = np.array([val % 13 if val >= 0 else -1 for val in hand])
-        hand_vals = list(hand_vals[hand_vals >= 0])
-        hand_order = np.flip(np.argsort([i + (hand_vals.count(i) - 1) * 13 for i in hand_vals]))
-        rearrranged_hand = np.array(hand_vals)[hand_order]
-        return np.concatenate([rearrranged_hand, [-1] * (5 - len(hand_vals))])
-
-    def get_curr_leader(self, cpu_hand, opp_hand):
-        cpu_hand_vals = self.rearrange_hand(cpu_hand)
-        opp_hand_vals = self.rearrange_hand(opp_hand)
-        for i in range(5):
-            if cpu_hand_vals[i] > opp_hand_vals[i]:
-                return "cpu"
-            elif cpu_hand_vals[i] < opp_hand_vals[i]:
-                return "opp"
-        return "tie"
-
-    def log_data(self, probas_df, dec_win_probas_list):
-        probas_df["game_id"] = self.game_id
-        probas_df["decision_id"] = self.decision_id
-        self.probas_data[self.game_id * 12 + self.decision_id] = probas_df
-        self.decisions_data[self.game_id * 12 + self.decision_id] = dec_win_probas_list
-
-        self.decision_id += 1
-        if self.decision_id == 12:
-            self.decision_id = 0
-            self.game_id += 1
-
-    def get_data_as_dfs(self):
-        return pd.concat(list(self.probas_data.values())), pd.DataFrame.from_dict(self.decisions_data)
