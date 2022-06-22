@@ -11,6 +11,7 @@ class CpuPlayer():
     def __init__(self, proba_method="heuristic", fifth_card_exact_calc=False):
         self.proba_method = proba_method
         self.fifth_card_exact_calc = fifth_card_exact_calc
+        self.decision_id = 0
 
     def get_choice(self, level, turn, player, deck, pot_card):
         # getting allowed decision options
@@ -64,6 +65,12 @@ class CpuPlayer():
 
         # choose the option that maximized game win proba
         decision = int(np.argmax(dec_game_win_probas))
+
+        # keeping track of decision order
+        self.decision_id += 1
+        if self.decision_id == 12:
+            self.decision_id = 0
+
         return decision
 
     def calc_hand_probas(self, current_hand, deck):

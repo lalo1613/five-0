@@ -135,6 +135,11 @@ class CpuPlayer():
             probas_data = pd.DataFrame([self.calc_hand_probas(cpu_hands[i], np.concatenate([deck_left, [pot_card]])) for i in range(5)])
             self.log_data(probas_data, dec_game_win_probas)
 
+        self.decision_id += 1
+        if self.decision_id == 12:
+            self.decision_id = 0
+            self.game_id += 1
+
         return decision
 
     def calc_hand_probas(self, current_hand, deck):
@@ -733,11 +738,6 @@ class CpuPlayer():
         probas_df["decision_id"] = self.decision_id
         self.probas_data[self.game_id * 12 + self.decision_id] = probas_df
         self.decisions_data[self.game_id * 12 + self.decision_id] = dec_win_probas_list
-
-        self.decision_id += 1
-        if self.decision_id == 12:
-            self.decision_id = 0
-            self.game_id += 1
 
     def get_data_as_dfs(self):
         return pd.concat(list(self.probas_data.values())), pd.DataFrame.from_dict(self.decisions_data)
