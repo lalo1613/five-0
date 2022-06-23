@@ -52,7 +52,7 @@ class CpuPlayer():
     * Currently the first round is placed based on strongest potential column given the drawn card,
         regardless of the opponents hand, as the code doesn't yet support hand probas for a column with a single card.
 
-    * Tiebreaks within same hand type and same high card val are not currently calculated, odds are split to 50-50.
+    * Tiebreaks within same hand type and same high card val are not currently calculated, odds are split 50-50.
 
     * In final round, the transition between 4th and 5th card win odds is weird when using the exact raw opp probas.
         Since they are raw, it's currently a trade off between having them solve the tiebreak issue or the rawness issue.
@@ -60,6 +60,8 @@ class CpuPlayer():
         and then the exact probas code can actually be discarded.
 
     * Straight flush probability not calculated until last round.
+
+    * Heuristic raw proba adjustemnt seems to work well, but the 2 parameters there could still be tuned to improve it.
     """
 
     def __init__(self, save_data=False, proba_method="heuristic",
