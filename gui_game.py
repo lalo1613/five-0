@@ -173,7 +173,7 @@ def calculateWinner():
                 l = list(range(13))
                 l.insert(0, 12)
                 for i in l:
-                    if handValueCounts[p][c][i] == 1:
+                    if handValueCounts[p][c][i] == 1 and count < 5:
                         if last is False:
                             last = True
                             count = 1
@@ -182,6 +182,9 @@ def calculateWinner():
                     else:
                         last = False
                 if (count == 5):
+                    if 12 in handValues[p][c] and 3 in handValues[p][c]:
+                        handValues[p][c] = [i if i != 12 else -1 for i in handValues[p][c]]
+                        handValues[p][c].sort(reverse=True)
                     if (handSuited[p][c]):
                         handLabels[p][c] = hands[8] + " " + cardNames[max(handValues[p][c])] + " High"
                         handCode[p][c] = [8] + [handValues[p][c][0]] + [handValues[p][c][1]] + handValues[p][c]
@@ -232,7 +235,7 @@ pygame.display.set_caption("Five-O Poker")
 # game settings
 run = True
 score = [0, 0]
-speedModifier = 1 / 5  # smaller means faster
+speedModifier = 1 / 50  # smaller means faster
 cpuPlayer = True
 nmlp0 = CpuPlayer()
 loadImages()

@@ -63,6 +63,9 @@ def calculate_winner(game_board):
                     else:
                         last = False
                 if(count==5):
+                    if 12 in handValues[p][c] and 3 in handValues[p][c]:
+                        handValues[p][c] = [i if i != 12 else -1 for i in handValues[p][c]]
+                        handValues[p][c].sort(reverse=True)
                     if(handSuited[p][c]):
                         handLabels[p][c] = hands[8] + " " + cardNames[max(handValues[p][c])] + " High"
                         handCode[p][c] = [8] + [handValues[p][c][0]] + [handValues[p][c][1]] + handValues[p][c]
