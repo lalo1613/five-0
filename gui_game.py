@@ -235,7 +235,7 @@ pygame.display.set_caption("Five-O Poker")
 # game settings
 run = True
 score = [0, 0]
-speedModifier = 1 / 50  # smaller means faster
+speedModifier = 1 / 5  # smaller means faster
 cpuPlayer = True
 nmlp0 = CpuPlayer()
 loadImages()
